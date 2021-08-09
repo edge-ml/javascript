@@ -1,12 +1,12 @@
-# explorer-node
+# Node
 
-Node library for https://github.com/teco-kit/explorer. Can be used to upload datasets as whole or incrementally.
+Node library for https://github.com/edge-ml. Can be used to upload datasets as whole or incrementally.
 
-![Tests](https://github.com/teco-kit/explorer-node/actions/workflows/npm-publish.yml/badge.svg)
+[![Node.js Package](https://github.com/edge-ml/node/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/edge-ml/node/actions/workflows/npm-publish.yml)
 
 ## How to use
 
-#### Installation
+### Installation
 
 The library can be installed from npm
 
@@ -14,7 +14,7 @@ The library can be installed from npm
 npm i explorer-node
 ```
 
-#### Upload datasets as a whole
+### Upload datasets as a whole
 
 ```js
 const sendDataset = require("explorer-node").sendDataset;
@@ -34,9 +34,9 @@ sendDataset(
   );
 ```
 
-#### Upload datasets in increments
+### Upload datasets in increments
 
-##### Upload datasets in increments with custom timestamps
+#### Upload datasets in increments with custom timestamps
 
 ```js
 const datasetCollector = require("explorer-node").datasetCollector;
@@ -70,7 +70,7 @@ try {
 }
 ```
 
-##### Upload datasets in increments with timestamps from the device
+#### Upload datasets in increments with timestamps from the device
 
 ```js
 const datasetCollector = require("explorer-node").datasetCollector;
