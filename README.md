@@ -1,18 +1,18 @@
-# Node
+# EdgeML-Node
 
-Node library for https://github.com/edge-ml. Can be used to upload datasets as whole or incrementally.
+Node library for <https://github.com/edge-ml>. Can be used to upload datasets as whole or incrementally.
 
 [![Node.js Package](https://github.com/edge-ml/node/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/edge-ml/node/actions/workflows/npm-publish.yml)
 
-## How to use
+## Installation
 
-### Installation
-
-The library can be installed from npm
+### Install from npm
 
 ```bash
 npm i explorer-node
 ```
+
+## How to use
 
 ### Upload datasets as a whole
 
@@ -36,22 +36,22 @@ sendDataset(
 
 ### Upload datasets in increments
 
-#### Upload datasets in increments with custom timestamps
+#### Use custom timestamps
 
 ```js
 const datasetCollector = require("explorer-node").datasetCollector;
 
 // Generate collector function
-const collector = await datasetCollector(
-  (url = "explorerBackendUrl"),
-  (key = "deviceApiKey"),
-  (name = "datasetName"),
-  (useDeviceTime = false) // true if you want to use the time of the device, false if you want to provide your own timestamps
-);
-if (collector.error) {
-  // Error occurred, cannot use the collector as a function to upload datasetincrements
-  console.log(collector.error);
-  return;
+try {
+  const collector = await datasetCollector(
+    (url = "explorerBackendUrl"),
+    (key = "deviceApiKey"),
+    (name = "datasetName"),
+    (useDeviceTime = false) // true if you want to use the time of the device, false if you want to provide your own timestamps
+  );
+} catch(e) {
+  // Error occurred, cannot use the collector as a function to upload.
+  console.log(e)
 }
 
 try {
@@ -64,28 +64,27 @@ try {
 
   // Tells the libarary that all data has been recorded.
   // Uploads all remaining datapoints to the server
-  collector.onComplete();
+  await collector.onComplete();
 } catch (e) {
   console.log(e);
 }
 ```
 
-#### Upload datasets in increments with timestamps from the device
+#### Use timestamps from the device
 
 ```js
 const datasetCollector = require("explorer-node").datasetCollector;
 
 // Generate collector function
-const collector = await datasetCollector(
-  (url = "explorerBackendUrl"),
-  (key = "deviceApiKey"),
-  (name = "datasetName"),
-  (useDeviceTime = true) // The datapoint at which addDataPoint is called will be used.
-);
-if (collector.error) {
-  // Error occurred, cannot use the collector as a function to upload datasetincrements
-  console.log(collector.error);
-  return;
+try {
+  const collector = await datasetCollector(
+    (url = "explorerBackendUrl"),
+    (key = "deviceApiKey"),
+    (name = "datasetName"),
+    (useDeviceTime = true) // The data point at which addDataPoint is called will be used.
+  );
+} catch (e) {
+  console.log(e);
 }
 
 try {
@@ -94,7 +93,7 @@ try {
 
   // Tells the libarary that all data has been recorded.
   // Uploads all remaining datapoints to the server
-  collector.onComplete();
+  await collector.onComplete();
 } catch (e) {
   console.log(e);
 }

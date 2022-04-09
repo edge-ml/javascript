@@ -1,9 +1,5 @@
-//import { sendDataset } from "./index.js";
-const sendDataset = require("./index").sendDataset;
-const datasetCollector = require("./index").datasetCollector;
-
-const axios = require("axios");
-jest.mock("axios");
+const sendDataset = require("./index.js").sendDataset;
+const datasetCollector = require("./index.js").datasetCollector;
 
 const fakeDataset_One = {
   start: 1595506316,
@@ -27,75 +23,203 @@ const fakeDataset_One = {
   ],
 };
 
+const mockFetch = (status, text) => {
+  if (!text) {
+    globalThis.fetch = jest.fn().mockImplementationOnce(() =>
+      Promise.resolve({
+        status: status,
+      })
+    );
+  } else {
+    globalThis.fetch = jest.fn().mockImplementationOnce(() =>
+      Promise.resolve({
+        status: status,
+        text: () => {
+          return Promise.resolve(JSON.stringify(text));
+        },
+      })
+    );
+  }
+  if (status >= 500) {
+    if (!text) {
+      globalThis.fetch = jest.fn().mockImplementationOnce(() =>
+        Promise.reject({
+          status: status,
+        })
+      );
+    } else {
+      globalThis.fetch = jest.fn().mockImplementationOnce(() =>
+        Promise.reject({
+          status: status,
+          text: () => {
+            return Promise.resolve(JSON.stringify(text));
+          },
+        })
+      );
+    }
+  }
+};
+
 afterEach(() => {
   jest.resetAllMocks();
 });
 
-it("Sending whole dataset", async () => {
-  axios.post.mockImplementation(() =>
-    Promise.resolve({ data: { message: "Generated dataset" } })
-  );
-  var collector = await sendDataset(
-    "fakeURL",
-    "vHyedy6rmackO+Iz1T5+Hoznxvy+hVYq/Rwb6pFboeJxi9mioR+Evoz9KEOmSm2Avlv/HkQeZinrwqK0GlDp+Q==",
-    fakeDataset_One
-  );
-  expect(collector).toEqual("Generated dataset");
+describe("Testing postData", () => {});
+
+describe("Sending whole dataset", () => {
+  it("Success case", async () => {
+    mockFetch(200, { message: "Generated dataset" });
+    var collector = await sendDataset("fakeURL", "key", fakeDataset_One);
+    expect(collector).toEqual("Generated dataset");
+  });
+
+  it("Url is wrong", async () => {
+    mockFetch(500);
+    sendDataset("fakeURL", "key", fakeDataset_One).catch((err) => {
+      expect(err).toEqual({ text: { error: "Server Error" } });
+    });
+  });
+
+  it("Key is wrong", async () => {
+    mockFetch(403, { error: "Invalid Key" });
+    sendDataset("fakeURL", "wrong_key", fakeDataset_One)
+      .then(() => {
+        expect(false).toEqual(true);
+      })
+      .catch((err) => {
+        expect(err).toEqual({ status: 403, text: { error: "Invalid Key" } });
+      });
+  });
 });
 
 describe("sending dataset in increments", () => {
-  axios.post.mockImplementation(() => Promise.reject({ error: "fakeError" }));
+  // axios.post.mockImplementation(() => Promise.reject({ error: "fakeError" }));
   it("Error creating datasetCollector", async () => {
-    var collector = await datasetCollector(
+    mockFetch(400, { error: "fake_error" });
+    datasetCollector(
       "fakeURL",
-      "Y8JCElwgmcFmDctyT3pV5OGnZU/nWIMF4EQLhLkYSQ6ZTaOhUD7ijVCln8KKU++B57XsmX1uQd/U76vpdIsHow=?",
+      "fakeKey",
+      "fake_name",
       "testDataset",
       false
-    );
-    expect(collector.error).not.toEqual(undefined);
+    ).catch(() => {
+      expect(true);
+    });
   });
 
   it("Error sending single datapoints", async () => {
-    axios.post.mockImplementationOnce(() =>
-      Promise.resolve({ data: { datasetKey: "fakeDeviceKey" } })
-    );
-
+    mockFetch(200, { datasetKey: "fake_key" });
     var collector = await datasetCollector(
       "fakeURL",
-      "Y8JCElwgmcFmDctyT3pV5OGnZU/nWIMF4EQLhLkYSQ6ZTaOhUD7ijVCln8KKU++B57XsmX1uQd/U76vpdIsHow==",
+      "fakeKey",
+      "fake_name",
       false
     );
     expect(collector.error).toEqual(undefined);
-    axios.post.mockReturnValue(Promise.reject("fakeError"));
+    mockFetch(400, { error: "fake_error" });
     try {
       collector.addDataPoint(1618760114000, "accX", 1);
-      collector.onComplete();
+      await collector.onComplete();
     } catch (e) {
-      console.log("Testerror")
-      expect(e).toMatch("fakeError");
+      expect(e).toEqual({ status: 400, text: { error: "fake_error" } });
     }
   });
 
-  it("Everything works as expected", async () => {
-    axios.post.mockImplementationOnce(() =>
-      Promise.resolve({ data: { datasetKey: "fakeDeviceKey" } })
-    );
-
+  it("Datapoint value is not a number", async () => {
+    mockFetch(200, { datasetKey: "fake_key" });
     var collector = await datasetCollector(
       "fakeURL",
-      "Y8JCElwgmcFmDctyT3pV5OGnZU/nWIMF4EQLhLkYSQ6ZTaOhUD7ijVCln8KKU++B57XsmX1uQd/U76vpdIsHow==",
+      "fakeKey",
+      "fake_name",
       false
     );
     expect(collector.error).toEqual(undefined);
-    axios.post.mockImplementation(() =>
-      Promise.resolve({ data: { message: "Added data" } })
+    try {
+      collector.addDataPoint(1618760114000, "accX", "not_a_number");
+      await collector.onComplete();
+    } catch (e) {
+      expect(e.message).toEqual("Datapoint is not a number");
+    }
+  });
+
+  it("Timestamp is not valid", async () => {
+    mockFetch(200, { datasetKey: "fake_key" });
+    var collector = await datasetCollector(
+      "fakeURL",
+      "fakeKey",
+      "fake_name",
+      false
     );
+    expect(collector.error).toEqual(undefined);
+    try {
+      collector.addDataPoint("not_valid", "accX", 23);
+      await collector.onComplete();
+    } catch (e) {
+      expect(e.message).toEqual("Provide a valid timestamp");
+    }
+  });
+
+  it("Use own timestamps", async () => {
+    mockFetch(200, { datasetKey: "fakeDeviceKey" });
+
+    var collector = await datasetCollector(
+      "fakeURL",
+      "fakeKey",
+      "fake_name",
+      false
+    );
+    expect(collector.error).toEqual(undefined);
+    mockFetch(200, { message: "Added data" });
 
     try {
       for (var i = 0; i < 10; i++) {
         collector.addDataPoint(1618760114000, "accX", 1);
       }
-      collector.onComplete();
+      await collector.onComplete();
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+  it("Use device time", async () => {
+    mockFetch(200, { datasetKey: "fakeDeviceKey" });
+
+    var collector = await datasetCollector(
+      "fakeURL",
+      "fakeKey",
+      "fake_name",
+      true
+    );
+    expect(collector.error).toEqual(undefined);
+    mockFetch(200, { message: "Added data" });
+
+    try {
+      for (var i = 0; i < 10; i++) {
+        collector.addDataPoint("accX", 1);
+      }
+      await collector.onComplete();
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+  it("Trigger increment upload", async () => {
+    mockFetch(200, { datasetKey: "fakeDeviceKey" });
+
+    var collector = await datasetCollector(
+      "fakeURL",
+      "fakeKey",
+      "fake_name",
+      false
+    );
+    expect(collector.error).toEqual(undefined);
+    mockFetch(200, { message: "Added data" });
+
+    try {
+      for (var i = 0; i < 1001; i++) {
+        collector.addDataPoint(i * 10, "accX", 1);
+      }
+      await collector.onComplete();
     } catch (e) {
       fail(e);
     }

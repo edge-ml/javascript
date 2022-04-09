@@ -1,15 +1,14 @@
 {
-  "name": "explorer-node",
-  "version": "2.0.2",
-  "description": "",
+  "name": "edge-ml",
+  "version": "1.0.0",
+  "description": "Data collection tool for edge-ml (https://github.com/edge-ml)",
   "main": "index.js",
   "scripts": {
-    "test": "jest test"
+    "test": "jest test --coverage"
   },
-  "author": "Tobias King",
   "license": "MIT",
   "dependencies": {
-    "axios": "*"
+    "node-fetch": "^3.2.3"
   },
   "devDependencies": {
     "jest": "*"
