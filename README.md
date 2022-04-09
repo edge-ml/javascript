@@ -9,7 +9,13 @@ Node library for <https://github.com/edge-ml>. Can be used to upload datasets as
 ### Install from npm
 
 ```bash
-npm i explorer-node
+npm i edge-ml
+```
+
+### Install from cdn
+
+```html
+<script src="https://unpkg.com/edge-ml"></script>
 ```
 
 ## How to use
@@ -17,7 +23,7 @@ npm i explorer-node
 ### Upload datasets as a whole
 
 ```js
-const sendDataset = require("explorer-node").sendDataset;
+const sendDataset = require("edge-ml").sendDataset;
 
 sendDataset(
   (url = "explorerBackendUrl"),
@@ -39,7 +45,7 @@ sendDataset(
 #### Use custom timestamps
 
 ```js
-const datasetCollector = require("explorer-node").datasetCollector;
+const datasetCollector = require("edge-ml").datasetCollector;
 
 // Generate collector function
 try {
@@ -49,9 +55,9 @@ try {
     (name = "datasetName"),
     (useDeviceTime = false) // true if you want to use the time of the device, false if you want to provide your own timestamps
   );
-} catch(e) {
+} catch (e) {
   // Error occurred, cannot use the collector as a function to upload.
-  console.log(e)
+  console.log(e);
 }
 
 try {
@@ -73,7 +79,7 @@ try {
 #### Use timestamps from the device
 
 ```js
-const datasetCollector = require("explorer-node").datasetCollector;
+const datasetCollector = require("edge-ml").datasetCollector;
 
 // Generate collector function
 try {
