@@ -6,25 +6,32 @@ Node library for <https://github.com/edge-ml>. Can be used to upload datasets as
 
 ## Installation
 
-### Install from npm
+### Install from npm (Node.js)
 
 ```bash
 npm i edge-ml
 ```
 
-### Install from cdn
+The functions need to be included with the following code:
+
+```js
+const sendDataset = require("edge-ml").sendDataset;
+const datasetCollector = require("edge-ml").datasetCollector;
+```
+
+### Use from CDN
 
 ```html
 <script src="https://unpkg.com/edge-ml"></script>
 ```
+
+The functions `sendDataset` and `datasetCollector` are then accessible as global functions.
 
 ## How to use
 
 ### Upload datasets as a whole
 
 ```js
-const sendDataset = require("edge-ml").sendDataset;
-
 sendDataset(
   (url = "explorerBackendUrl"),
   (key = "deviceApiKey"),
@@ -45,8 +52,6 @@ sendDataset(
 #### Use custom timestamps
 
 ```js
-const datasetCollector = require("edge-ml").datasetCollector;
-
 // Generate collector function
 try {
   const collector = await datasetCollector(
@@ -79,8 +84,6 @@ try {
 #### Use timestamps from the device
 
 ```js
-const datasetCollector = require("edge-ml").datasetCollector;
-
 // Generate collector function
 try {
   const collector = await datasetCollector(
