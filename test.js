@@ -25,13 +25,13 @@ const fakeDataset_One = {
 
 const mockFetch = (status, text) => {
   if (!text) {
-    globalThis.fetch = jest.fn().mockImplementationOnce(() =>
+    globalThis.fetch = jest.fn().mockImplementation(() =>
       Promise.resolve({
         status: status,
       })
     );
   } else {
-    globalThis.fetch = jest.fn().mockImplementationOnce(() =>
+    globalThis.fetch = jest.fn().mockImplementation(() =>
       Promise.resolve({
         status: status,
         text: () => {
@@ -39,24 +39,6 @@ const mockFetch = (status, text) => {
         },
       })
     );
-  }
-  if (status >= 500) {
-    if (!text) {
-      globalThis.fetch = jest.fn().mockImplementationOnce(() =>
-        Promise.reject({
-          status: status,
-        })
-      );
-    } else {
-      globalThis.fetch = jest.fn().mockImplementationOnce(() =>
-        Promise.reject({
-          status: status,
-          text: () => {
-            return Promise.resolve(JSON.stringify(text));
-          },
-        })
-      );
-    }
   }
 };
 
@@ -121,7 +103,9 @@ describe("sending dataset in increments", () => {
       collector.addDataPoint(1618760114000, "accX", 1);
       await collector.onComplete();
     } catch (e) {
-      expect(e).toEqual({ status: 400, text: { error: "fake_error" } });
+      console.log(e);
+      expect(e.message).toEqual("Could not upload data");
+      //expect(e).toEqual({ status: 400, text: { error: "fake_error" } });
     }
   });
 
@@ -221,7 +205,7 @@ describe("sending dataset in increments", () => {
       }
       await collector.onComplete();
     } catch (e) {
-      fail(e);
+      throw new Error("Test failed");
     }
   });
 });

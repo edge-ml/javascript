@@ -58,7 +58,11 @@ try {
     (url = "explorerBackendUrl"),
     (key = "deviceApiKey"),
     (name = "datasetName"),
-    (useDeviceTime = false) // true if you want to use the time of the device, false if you want to provide your own timestamps
+    (useDeviceTime = false), // Provide own timestamps
+
+    // These two parameters can be omitted
+    (metaData = { key: "value" }), // Only object allowed
+    (datasetLabel = "labeling_label")
   );
 } catch (e) {
   // Error occurred, cannot use the collector as a function to upload.
@@ -90,7 +94,11 @@ try {
     (url = "explorerBackendUrl"),
     (key = "deviceApiKey"),
     (name = "datasetName"),
-    (useDeviceTime = true) // The data point at which addDataPoint is called will be used.
+    (useDeviceTime = true), // Library sets time
+
+    // These two parameters can be omitted
+    (metaData = { key: "value" }), // Only object allowed
+    (datasetLabel = "labeling_label")
   );
 } catch (e) {
   console.log(e);
@@ -98,7 +106,10 @@ try {
 
 try {
   // No longer necessary to provide the time here
-  collector.addDataPoint((sensorName = "sensorName"), (value = 1.23));
+  collector.addDataPoint(
+    (sensorName = "sensorName"),
+    (value = 1.23)
+    );
 
   // Tells the libarary that all data has been recorded.
   // Uploads all remaining datapoints to the server
