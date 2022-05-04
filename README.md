@@ -37,9 +37,9 @@ The functions `sendDataset` and `datasetCollector` are then accessible as global
 
 ```js
 sendDataset(
-  (url = "explorerBackendUrl"),
-  (key = "deviceApiKey"),
-  (dataset = dataset)
+  "backendUrl" // Backend-URL
+  "deviceApiKey", // API-Key
+  dataset // The dataset object
 )
   .then((msg) =>
     // Handle success
@@ -59,14 +59,14 @@ sendDataset(
 // Generate collector function
 try {
   var collector = await datasetCollector(
-    (url = "explorerBackendUrl"),
-    (key = "deviceApiKey"),
-    (name = "datasetName"),
-    (useDeviceTime = false), // Provide own timestamps
+    "backendUrl", // Backend-URL
+    "deviceApiKey", // API-Key
+    "datasetName", // Name for the dataset
+    false, // False to provide own timestamps
 
     // These two parameters can be omitted
-    (metaData = { key: "value" }), // Only object allowed
-    (datasetLabel = "labeling_label")
+    { key: "value" }, // Metadata: {} to omit
+    "labeling_label" // Labeling and label for the whole dataset. Format: {labeling}_{label}
   );
 } catch (e) {
   // Error occurred, cannot use the collector as a function to upload.
@@ -74,11 +74,11 @@ try {
 }
 
 try {
-  // time should be a unix timestamp
+  // Function expects 3 arguments
   collector.addDataPoint(
-    (time = 1618760114000),
-    (sensorName = "sensorName"),
-    (value = 1.23)
+    1618760114000, // Timestamp to set in unix milliseconds
+    "sensorName", // Name of the sensor
+    1.23 // Value
   );
 
   // Tells the libarary that all data has been recorded.
@@ -95,24 +95,24 @@ try {
 // Generate collector function
 try {
   var collector = await datasetCollector(
-    (url = "explorerBackendUrl"),
-    (key = "deviceApiKey"),
-    (name = "datasetName"),
-    (useDeviceTime = true), // Library sets time
+    "backendUrl", // Backend-URL
+    "deviceApiKey", // API-Key
+    "datasetName", // Name for the dataset
+    true, // True, the library provides timestamps
 
     // These two parameters can be omitted
-    (metaData = { key: "value" }), // Only object allowed
-    (datasetLabel = "labeling_label")
+    { key: "value" }, // Metadata: {} to omit
+    "labeling_label" // Labeling and label for the whole dataset. Format: {labeling}_{label}
   );
 } catch (e) {
   console.log(e);
 }
 
 try {
-  // No longer necessary to provide the time here
+  // Function expects 2 arguments (timestamp omitted)
   collector.addDataPoint(
-    (sensorName = "sensorName"),
-    (value = 1.23)
+    "sensorName", // Name of the sensor
+    1.23, // Value 
     );
 
   // Tells the libarary that all data has been recorded.
