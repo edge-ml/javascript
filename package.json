@@ -1,6 +1,6 @@
 {
     "name": "edge-ml",
-    "version": "2.1.0",
+    "version": "2.1.1",
     "description": "Data collection tool for edge-ml (https://github.com/edge-ml)",
     "main": "src/index.js",
     "scripts": {
