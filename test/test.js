@@ -1,5 +1,8 @@
-const sendDataset = require("./index.js").sendDataset;
-const datasetCollector = require("./index.js").datasetCollector;
+const axios = require("axios").default;
+jest.mock("axios");
+
+const sendDataset = require("../src/index.js").sendDataset;
+const datasetCollector = require("../src/index.js").datasetCollector;
 
 const fakeDataset_One = {
   start: 1595506316,
@@ -23,74 +26,59 @@ const fakeDataset_One = {
   ],
 };
 
-const mockFetch = (status, text) => {
-  if (!text) {
-    globalThis.fetch = jest.fn().mockImplementation(() =>
-      Promise.resolve({
-        status: status,
-      })
-    );
-  } else {
-    globalThis.fetch = jest.fn().mockImplementation(() =>
-      Promise.resolve({
-        status: status,
-        text: () => {
-          return Promise.resolve(JSON.stringify(text));
-        },
-      })
-    );
-  }
-};
-
 afterEach(() => {
   jest.resetAllMocks();
 });
 
-describe("Testing postData", () => {});
-
 describe("Sending whole dataset", () => {
   it("Success case", async () => {
-    mockFetch(200, { message: "Generated dataset" });
+    axios.post.mockImplementationOnce(() =>
+      Promise.resolve({ status: 200, text: { message: "Generated dataset" } })
+    );
     var collector = await sendDataset("fakeURL", "key", fakeDataset_One);
     expect(collector).toEqual("Generated dataset");
   });
 
   it("Url is wrong", async () => {
-    mockFetch(500);
+    axios.post.mockImplementationOnce(() =>
+      Promise.reject({ text: { error: "Server Error" } })
+    );
     sendDataset("fakeURL", "key", fakeDataset_One).catch((err) => {
       expect(err).toEqual({ text: { error: "Server Error" } });
     });
   });
 
   it("Key is wrong", async () => {
-    mockFetch(403, { error: "Invalid Key" });
+    axios.post.mockImplementationOnce(() =>
+      Promise.reject({ status: 403, text: { error: "Invalid key" } })
+    );
     sendDataset("fakeURL", "wrong_key", fakeDataset_One)
       .then(() => {
         expect(false).toEqual(true);
       })
       .catch((err) => {
-        expect(err).toEqual({ status: 403, text: { error: "Invalid Key" } });
+        expect(err).toEqual({ status: 403, text: { error: "Invalid key" } });
       });
   });
 });
 
 describe("sending dataset in increments", () => {
-  // axios.post.mockImplementation(() => Promise.reject({ error: "fakeError" }));
   it("Error creating datasetCollector", async () => {
-    mockFetch(400, { error: "fake_error" });
+    axios.post.mockImplementation(() => Promise.reject({status: 400, text: { error: "fakeError" }}));
     datasetCollector(
       "fakeURL",
       "fakeKey",
       "fake_name",
       "testDataset",
       false
-    ).catch(() => {
+    ).catch((err) => {
+      console.log(err)
       expect(true);
     });
   });
 
   it("Error sending single datapoints", async () => {
-    mockFetch(200, { datasetKey: "fake_key" });
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { datasetKey: "fake_key" }}));
     var collector = await datasetCollector(
       "fakeURL",
       "fakeKey",
@@ -98,7 +86,7 @@ describe("sending dataset in increments", () => {
       false
     );
     expect(collector.error).toEqual(undefined);
-    mockFetch(400, { error: "fake_error" });
+    axios.post.mockImplementation(() => Promise.reject({status: 400, text: { error: "fake_error" }}));
     try {
       collector.addDataPoint(1618760114000, "accX", 1);
       await collector.onComplete();
@@ -110,7 +98,7 @@ describe("sending dataset in increments", () => {
   });
 
   it("Datapoint value is not a number", async () => {
-    mockFetch(200, { datasetKey: "fake_key" });
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { datasetKey: "fake_key" }}));
     var collector = await datasetCollector(
       "fakeURL",
       "fakeKey",
@@ -127,7 +115,7 @@ describe("sending dataset in increments", () => {
   });
 
   it("Timestamp is not valid", async () => {
-    mockFetch(200, { datasetKey: "fake_key" });
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { datasetKey: "fake_key" }}));
     var collector = await datasetCollector(
       "fakeURL",
       "fakeKey",
@@ -144,8 +132,7 @@ describe("sending dataset in increments", () => {
   });
 
   it("Use own timestamps", async () => {
-    mockFetch(200, { datasetKey: "fakeDeviceKey" });
-
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { datasetKey: "fake_key" }}));
     var collector = await datasetCollector(
       "fakeURL",
       "fakeKey",
@@ -153,8 +140,7 @@ describe("sending dataset in increments", () => {
       false
     );
     expect(collector.error).toEqual(undefined);
-    mockFetch(200, { message: "Added data" });
-
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { message: "Added data" }}));
     try {
       for (var i = 0; i < 10; i++) {
         collector.addDataPoint(1618760114000, "accX", 1);
@@ -166,8 +152,7 @@ describe("sending dataset in increments", () => {
   });
 
   it("Use device time", async () => {
-    mockFetch(200, { datasetKey: "fakeDeviceKey" });
-
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { datasetKey: "fake_key" }}));
     var collector = await datasetCollector(
       "fakeURL",
       "fakeKey",
@@ -175,8 +160,7 @@ describe("sending dataset in increments", () => {
       true
     );
     expect(collector.error).toEqual(undefined);
-    mockFetch(200, { message: "Added data" });
-
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { message: "Added data" }}));
     try {
       for (var i = 0; i < 10; i++) {
         collector.addDataPoint("accX", 1);
@@ -188,8 +172,7 @@ describe("sending dataset in increments", () => {
   });
 
   it("Trigger increment upload", async () => {
-    mockFetch(200, { datasetKey: "fakeDeviceKey" });
-
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { datasetKey: "fake_key" }}));
     var collector = await datasetCollector(
       "fakeURL",
       "fakeKey",
@@ -197,8 +180,7 @@ describe("sending dataset in increments", () => {
       false
     );
     expect(collector.error).toEqual(undefined);
-    mockFetch(200, { message: "Added data" });
-
+    axios.post.mockImplementation(() => Promise.resolve({status: 200, text: { message: "Added data" }}));
     try {
       for (var i = 0; i < 1001; i++) {
         collector.addDataPoint(i * 10, "accX", 1);

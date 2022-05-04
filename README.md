@@ -22,7 +22,11 @@ const datasetCollector = require("edge-ml").datasetCollector;
 ### Use from CDN
 
 ```html
-<script src="https://unpkg.com/edge-ml"></script>
+<script src="https://unpkg.com/edge-ml/dist/bundle.js"></script>
+<script>
+  sendDataset = edgeML.sendDataset
+  datasetCollector = edgeML.datasetCollector
+</script>
 ```
 
 The functions `sendDataset` and `datasetCollector` are then accessible as global functions.
@@ -54,7 +58,7 @@ sendDataset(
 ```js
 // Generate collector function
 try {
-  const collector = await datasetCollector(
+  var collector = await datasetCollector(
     (url = "explorerBackendUrl"),
     (key = "deviceApiKey"),
     (name = "datasetName"),
@@ -90,7 +94,7 @@ try {
 ```js
 // Generate collector function
 try {
-  const collector = await datasetCollector(
+  var collector = await datasetCollector(
     (url = "explorerBackendUrl"),
     (key = "deviceApiKey"),
     (name = "datasetName"),

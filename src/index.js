@@ -1,38 +1,22 @@
-async function loadFetch() {
-  if (typeof fetch == "undefined") {
-    // Case Node.js
-    const node_fetch = await import("node-fetch");
-    globalThis.fetch = node_fetch.default;
-  }
-  // Case Browser
-  return;
-}
+const axios = require("axios").default;
 
-async function postData(url, body) {
-  await loadFetch();
-  var res = undefined;
-  try {
-    const data = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const txt = JSON.parse(await data.text());
-    res = { status: data.status, text: txt };
-  } catch (err) {
-    if (!err.text) {
-      // Server error
-      res = { text: { error: "Server Error" } };
-    } else {
-      const txt = JSON.parse(await err.text());
-      res = { status: err.status, text: txt };
+axios.interceptors.response.use(
+  function (res) {
+    return { status: res.status, text: res.data };
+  },
+  function (error) {
+    if (!error.response) {
+      return Promise.reject("Server error");
     }
+    return Promise.reject(
+      error.response.status +
+        ": " +
+        (error.response.data.error
+          ? error.response.data.error
+          : error.response.data)
+    );
   }
-  if (checkStatus(res.status)) {
-    return res;
-  }
-  throw res;
-}
+);
 
 const URLS = {
   uploadDataset: "/api/deviceapi/uploadDataset",
@@ -40,10 +24,6 @@ const URLS = {
   addDatasetIncrement: "/api/deviceapi/addDatasetIncrement",
   addDatasetIncrementBatch: "/api/deviceapi/addDatasetIncrementBatch",
 };
-
-function checkStatus(status) {
-  return status >= 200 && status < 300;
-}
 
 /**
  * Uploads a whole dataset to a specific project
@@ -53,7 +33,7 @@ function checkStatus(status) {
  * @returns A Promise indicating success or failure
  */
 async function sendDataset(url, key, dataset) {
-  const res = await postData(url + URLS.uploadDataset, {
+  const res = await axios.post(url + URLS.uploadDataset, {
     key: key,
     payload: dataset,
   });
@@ -76,7 +56,7 @@ async function datasetCollector(
   datasetLabel
 ) {
   try {
-    const data = await postData(url + URLS.initDatasetIncrement, {
+    const data = await axios.post(url + URLS.initDatasetIncrement, {
       deviceApiKey: key,
       name: name,
       metaData: metaData,
@@ -151,7 +131,7 @@ async function datasetCollector(
     async function upload(datasetLabel) {
       const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
       try {
-        await postData(url + URLS.addDatasetIncrementBatch, {
+        await axios.post(url + URLS.addDatasetIncrementBatch, {
           datasetKey: tmp_datastore.datasetKey,
           data: tmp_datastore.data,
           datasetLabel: datasetLabel,
@@ -193,6 +173,4 @@ async function datasetCollector(
   }
 }
 
-if (typeof window === "undefined") {
-  module.exports = { datasetCollector, sendDataset };
-}
+module.exports = { datasetCollector, sendDataset };
