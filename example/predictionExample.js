@@ -12,15 +12,16 @@ const p = new Predictor(
 const test = csvToArray(fs.readFileSync('./test.csv', { encoding:'utf8' }))
 
 async function runner() {
-    for (const { time, ...valObjs } of test) {
+    for (const { time: ti, ...valObjs } of test) {
+        const time = parseInt(ti);
         for (const [key, valStr] of Object.entries(valObjs)) {
-            p.addDatapoint(key, parseInt(valStr), parseInt(time))
+            p.addDatapoint(key, parseInt(valStr), time)
         }
     
         try {
             const x = await p.predict()
-            console.log(x)
-            await sleep(250)
+            console.log((new Date(time).toISOString()), x)
+            await sleep(80)
         } catch(e) {
             console.log(e)
         }
