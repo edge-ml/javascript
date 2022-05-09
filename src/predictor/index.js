@@ -1,41 +1,6 @@
-/**
- *
- * @param {number} x 
- * @param {number} y 
- * @param {number} a 
- * @returns {number}
- */
-const lerp = (x, y, a) => x * (1 - a) + y * a;
-/**
- * in place
- * @param {(number | null)[]} arr
- * @param {number | undefined} l value for entries before first known, if undefined first known
- * @param {number | undefined} r value for entries after last known, if undefined last known
- * @return {number[]} 
- */
-let interpolateLinear = (arr, l, r) => {
-    let leftmost = l;
-    let nullCount = 0;
-
-    for (let i = 0; i < arr.length;) {
-        if (arr[i] !== null) {
-            for (let j = 0; j < nullCount; j++) {
-                arr[i - (nullCount - j)] = typeof leftmost !== 'undefined' ? lerp(leftmost, arr[i], (j + 1) / (nullCount + 1)) : arr[i]
-            }
-            nullCount = 0;
-
-            leftmost = arr[i];
-            i++;
-            continue;
-        }
-        for (; arr[i] === null; i++) {
-            nullCount++
-        }
-    }
-    for (let j = 0; j < nullCount; j++) {
-        arr[arr.length - (nullCount - j)] = leftmost
-    }
-}
+const { interpolateLinear } = require('./interpolation')
+const emscriptenLoader = require('../vendor/edge-fel/edge-fel.js')
+const { objToMap, arrToVector, vectorToArr, mapToObj } = require("./embindUtils")
 
 const PredictorError = exports.PredictorError = class PredictorError extends Error {}
 
@@ -99,14 +64,15 @@ const Predictor = exports.Predictor = class Predictor {
         }
     }
 
-    predict = () => {
+    predict = async () => {
         const samples = Predictor._merge(this.store, this.sensors);
         const interpolated = Predictor._interpolate(samples, this.sensors.length)
         const window = interpolated.slice(-this.windowSize)
         if (window.length < this.windowSize) {
             throw new PredictorError("Not enough samples")
         }
-        
+
+        console.log(window, await Predictor._extract(window, this.sensors.length))        
         // return window
     }
 
@@ -155,4 +121,52 @@ const Predictor = exports.Predictor = class Predictor {
             return arr;
         })
     }
+
+    /**
+     * 
+     * @param {(number[])[]} frame 
+     * @param {number} sensorsLength
+     * @returns {number[]}
+     */
+    static async _extract(frame, sensorsLength) {
+        const lists = []
+        for (let i = 0; i < sensorsLength; i++) {
+            const toF = frame.map(x => x[i+1]);
+            lists[i] = await Predictor._extractSome(toF)
+        }
+        return lists
+    }
+
+    static async _extractSome(arr) {
+        if (Predictor._cachedExtractSome) return Predictor._cachedExtractSome(arr);
+
+        // from edge-fel#Benchmarker@Main.cpp
+        const params = await objToMap({"mean_n_abs_max_n": 8, "change_quantile_lower": -0.1, "change_quantile_upper": 0.1, "change_quantile_aggr": 0, "range_count_lower": -1, "range_count_upper": 1, "count_above_x": 0, "count_below_x": 0, "quantile_q": 0.5, "autocorrelation_lag": 1})
+        const features_tsfresh = await arrToVector(["abs_energy", "abs_sum_of_changes", "autocorrelation", "count_above", "count_above_mean", "count_below", "count_below_mean", "first_location_of_max",
+        "first_location_of_min", "kurtosis", "last_location_of_max", "last_location_of_min", "max", "mean", "mean_abs_changes", "mean_changes", "median", "min", "zero_cross",
+        "quantile", "range_count", "root_mean_square", "skewness", "std_dev", "sum", "var"], 'string')
+
+        Predictor._cachedExtractSome = async (inArr) => {
+            // FIXME: how can I free this? Do I need to free this?
+            // It's via new so I think I should but I don't know if emscripten uses new on the other side.
+            const values = await arrToVector(inArr);
+            const delegate = await Predictor._getFel();
+            // and the return value of this?
+            const ret = delegate.extractSome(features_tsfresh, values, params)
+            const retArr = vectorToArr(ret);
+            // we should somehow free ret here.
+            return retArr;
+        }
+        return Predictor._extractSome(arr)
+    }
+
+    static async _getFel() {
+        if (Predictor._cachedFel) return Predictor._cachedFel;
+
+        Predictor._cachedFel = new ((await emscriptenLoader()).ExtractionDelegate)()
+        return Predictor._getFel()
+    }
 }
+
+Predictor._cachedFel = null;
+Predictor._cachedExtractSome = null;

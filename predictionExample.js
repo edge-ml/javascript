@@ -19,9 +19,7 @@ setInterval(() => {
     x[i] && p.addDatapoint('ACC_RAW_x', x[i], time)
     i++
 
-    try {
-        console.log(p.predict())
-    } catch(e) {
-        console.log(e.message)
-    }
+    p.predict()
+        .then(x => console.log(x))
+        .catch(e => console.log(e.message))
 }, 1000)

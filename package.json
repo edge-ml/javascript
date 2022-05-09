@@ -6,6 +6,7 @@
     "scripts": {
         "test": "jest test --coverage",
         "build": "webpack",
+        "vendor:edge-fel": "make edge-fel",
         "prepare": "husky install"
     },
     "license": "MIT",
