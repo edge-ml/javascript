@@ -1,6 +1,5 @@
 const { interpolateLinear } = require('./interpolation')
-const emscriptenLoader = require('../vendor/edge-fel/edge-fel.js')
-const { objToMap, arrToVector, vectorToArr, mapToObj } = require("./embindUtils")
+const { extractSome } = require("./fel")
 
 const PredictorError = exports.PredictorError = class PredictorError extends Error {}
 
@@ -72,8 +71,8 @@ const Predictor = exports.Predictor = class Predictor {
             throw new PredictorError("Not enough samples")
         }
 
-        console.log(window, await Predictor._extract(window, this.sensors.length))        
-        // return window
+        console.log(window, await Predictor._extract(window, this.sensors.length))
+        return window
     }
 
     /**
@@ -132,41 +131,8 @@ const Predictor = exports.Predictor = class Predictor {
         const lists = []
         for (let i = 0; i < sensorsLength; i++) {
             const toF = frame.map(x => x[i+1]);
-            lists[i] = await Predictor._extractSome(toF)
+            lists[i] = await extractSome(toF)
         }
         return lists
     }
-
-    static async _extractSome(arr) {
-        if (Predictor._cachedExtractSome) return Predictor._cachedExtractSome(arr);
-
-        // from edge-fel#Benchmarker@Main.cpp
-        const params = await objToMap({"mean_n_abs_max_n": 8, "change_quantile_lower": -0.1, "change_quantile_upper": 0.1, "change_quantile_aggr": 0, "range_count_lower": -1, "range_count_upper": 1, "count_above_x": 0, "count_below_x": 0, "quantile_q": 0.5, "autocorrelation_lag": 1})
-        const features_tsfresh = await arrToVector(["abs_energy", "abs_sum_of_changes", "autocorrelation", "count_above", "count_above_mean", "count_below", "count_below_mean", "first_location_of_max",
-        "first_location_of_min", "kurtosis", "last_location_of_max", "last_location_of_min", "max", "mean", "mean_abs_changes", "mean_changes", "median", "min", "zero_cross",
-        "quantile", "range_count", "root_mean_square", "skewness", "std_dev", "sum", "var"], 'string')
-
-        Predictor._cachedExtractSome = async (inArr) => {
-            // FIXME: how can I free this? Do I need to free this?
-            // It's via new so I think I should but I don't know if emscripten uses new on the other side.
-            const values = await arrToVector(inArr);
-            const delegate = await Predictor._getFel();
-            // and the return value of this?
-            const ret = delegate.extractSome(features_tsfresh, values, params)
-            const retArr = vectorToArr(ret);
-            // we should somehow free ret here.
-            return retArr;
-        }
-        return Predictor._extractSome(arr)
-    }
-
-    static async _getFel() {
-        if (Predictor._cachedFel) return Predictor._cachedFel;
-
-        Predictor._cachedFel = new ((await emscriptenLoader()).ExtractionDelegate)()
-        return Predictor._getFel()
-    }
 }
-
-Predictor._cachedFel = null;
-Predictor._cachedExtractSome = null;

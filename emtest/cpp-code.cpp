@@ -30,7 +30,7 @@ void Klass::use_vector(std::vector<std::string> &vec)
 
 EMSCRIPTEN_BINDINGS(EmbindVectorStringDemo)
 {
-    emscripten::register_vector<std::string>("StringList");
+    emscripten::register_vector<std::string>("vectorstring");
     // emscripten::function("use_vector_string", &use_vector_string);
     emscripten::class_<Klass>("Klass")
         .constructor<>()

@@ -20,6 +20,6 @@ setInterval(() => {
     i++
 
     p.predict()
-        .then(x => console.log(x))
+        .then(x => x)
         .catch(e => console.log(e.message))
 }, 1000)
