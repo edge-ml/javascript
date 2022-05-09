@@ -80,8 +80,10 @@ const Predictor = exports.Predictor = class Predictor {
             throw new PredictorError("Not enough samples")
         }
 
-        console.log(window, await Predictor._extract(window, this.sensors.length))
-        return window
+        const [featNames, feats] = await Predictor._extract(window, this.sensors.length)
+        
+        const pred = this.predictor(feats)
+        return pred
     }
 
     /**
