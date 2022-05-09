@@ -72,7 +72,7 @@ describe("sending dataset in increments", () => {
       "testDataset",
       false
     ).catch((err) => {
-      console.log(err)
+      // console.log(err)
       expect(true);
     });
   });
@@ -91,7 +91,7 @@ describe("sending dataset in increments", () => {
       collector.addDataPoint(1618760114000, "accX", 1);
       await collector.onComplete();
     } catch (e) {
-      console.log(e);
+      // console.log(e);
       expect(e.message).toEqual("Could not upload data");
       //expect(e).toEqual({ status: 400, text: { error: "fake_error" } });
     }

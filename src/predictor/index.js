@@ -1,5 +1,14 @@
 const { interpolateLinear } = require('./interpolation')
-const { extractSome } = require("./fel")
+const { extractSome, objToMap, arrToVector } = require("./fel")
+
+function cache(fn){
+    var NO_RESULT = Symbol("cache");
+    var res = NO_RESULT;
+    return function () {
+        if(res === NO_RESULT) return (res = fn.apply(this, arguments));
+        return res;
+    };
+}
 
 const PredictorError = exports.PredictorError = class PredictorError extends Error {}
 
@@ -128,11 +137,38 @@ const Predictor = exports.Predictor = class Predictor {
      * @returns {number[]}
      */
     static async _extract(frame, sensorsLength) {
-        const lists = []
+        // cache these
+        const felParams = await Predictor.felParams()
+        const felFeaturesTSfresh = await Predictor.felFeaturesTSfresh()
+
+        const feats = [] // [features, values]
         for (let i = 0; i < sensorsLength; i++) {
             const toF = frame.map(x => x[i+1]);
-            lists[i] = await extractSome(toF)
+            const featureMap = await extractSome(felFeaturesTSfresh, toF, felParams)
+            for (const [feat, val] of Object.entries(featureMap)) {
+                feats.push([[i, feat], val])
+            }
         }
-        return lists
+        feats.sort(([[aI, aFeat]], [[bI, bFeat]]) => {
+            if (aI !== bI) return aI - bI;
+            return Predictor.featuresTSfresh.indexOf(aFeat) - Predictor.featuresTSfresh.indexOf(bFeat)
+        })
+        return [feats.map(x => x[0].join('__')), feats.map(x => x[1])]
     }
 }
+
+/** @type {string[]} features */
+Predictor.featuresTSfresh = [
+    "sum",
+    "median",
+    "mean",
+    // "length", // FIXME: HUGE BUG HERE Nothing makes sense without this, but edge-fel doesn't have it
+    "std_dev",
+    "var",
+    "root_mean_square",
+    "max",
+    // "absolute_maximum", // same here
+    "min" 
+]
+Predictor.felParams = cache(() => objToMap({"mean_n_abs_max_n": 8, "change_quantile_lower": -0.1, "change_quantile_upper": 0.1, "change_quantile_aggr": 0, "range_count_lower": -1, "range_count_upper": 1, "count_above_x": 0, "count_below_x": 0, "quantile_q": 0.5, "autocorrelation_lag": 1}))
+Predictor.felFeaturesTSfresh = cache(() => arrToVector(Predictor.featuresTSfresh, 'string'))
