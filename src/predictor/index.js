@@ -164,12 +164,12 @@ Predictor.featuresTSfresh = [
     "sum",
     "median",
     "mean",
-    // "length", // FIXME: HUGE BUG HERE Nothing makes sense without this, but edge-fel doesn't have it
+    "length",
     "std_dev",
     "var",
     "root_mean_square",
     "max",
-    // "absolute_maximum", // same here
+    "abs_max",
     "min" 
 ]
 Predictor.felParams = cache(() => objToMap({"mean_n_abs_max_n": 8, "change_quantile_lower": -0.1, "change_quantile_upper": 0.1, "change_quantile_aggr": 0, "range_count_lower": -1, "range_count_upper": 1, "count_above_x": 0, "count_below_x": 0, "quantile_q": 0.5, "autocorrelation_lag": 1}))
