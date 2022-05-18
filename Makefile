@@ -12,4 +12,4 @@ src/vendor/edge-fel/edge-fel.js: build/edge-fel
 
 build/edge-fel:
 	mkdir -p $@
-	git clone -b webassembly https://github.com/edge-ml/edge-fel.git build/edge-fel
+	git clone -b main https://github.com/edge-ml/edge-fel.git build/edge-fel
