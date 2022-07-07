@@ -27,8 +27,9 @@ const Predictor = exports.Predictor = class Predictor {
      * @param {string[]} sensors 
      * @param {number} windowSize 
      * @param {string[]} labels 
+     * @param scaler 
      */
-    constructor(predictor, sensors, windowSize, labels) {
+    constructor(predictor, sensors, windowSize, labels, scaler) {
         /** @type {(input: number[]) => number[]} */
         this.predictor = predictor;
         /** @type {string[]} */
@@ -37,6 +38,8 @@ const Predictor = exports.Predictor = class Predictor {
         this.windowSize = windowSize;
         /** @type {string[]} */
         this.labels = labels; 
+
+        this.scaler = scaler;
 
         /** @type {{ [sensorName: string]: [number, number][] }} sensorName: [timestamp, value][] */
         this.store = this.sensors.reduce((acc, cur) => {
@@ -74,16 +77,19 @@ const Predictor = exports.Predictor = class Predictor {
 
     predict = async () => {
         const samples = Predictor._merge(this.store, this.sensors);
-        const interpolated = Predictor._interpolate(samples, this.sensors.length)
-        const window = interpolated.slice(-this.windowSize)
+        // const interpolated = Predictor._interpolate(samples, this.sensors.length) // interpolation is somehow broken?
+        const window = samples.slice(-this.windowSize)
         if (window.length < this.windowSize) {
             throw new PredictorError("Not enough samples")
         }
 
-        const [featNames, feats] = await Predictor._extract(window, this.sensors.length)
+        const [featNames, feats] = await Predictor._extract(window, this.sensors.length, this.scaler)
         
         const pred = this.predictor(feats)
-        return pred
+        return {
+            prediction: this.labels[pred.reduce((iMax, x, i, arr) => x > arr[iMax] ? i : iMax, 0)],
+            result: pred,
+        }
     }
 
     /**
@@ -136,9 +142,10 @@ const Predictor = exports.Predictor = class Predictor {
      * 
      * @param {(number[])[]} frame 
      * @param {number} sensorsLength
+     * @param scaler
      * @returns {number[]}
      */
-    static async _extract(frame, sensorsLength) {
+    static async _extract(frame, sensorsLength, scaler) {
         // cache these
         const felParams = await Predictor.felParams()
         const felFeaturesTSfresh = await Predictor.felFeaturesTSfresh()
@@ -155,6 +162,9 @@ const Predictor = exports.Predictor = class Predictor {
             if (aI !== bI) return aI - bI;
             return Predictor.featuresTSfresh.indexOf(aFeat) - Predictor.featuresTSfresh.indexOf(bFeat)
         })
+        for (let i = 0; i < feats.length; i++) {
+            feats[i][1] = (feats[i][1] - scaler["center"][i]) / scaler["scale"][i]
+        }
         return [feats.map(x => x[0].join('__')), feats.map(x => x[1])]
     }
 }
