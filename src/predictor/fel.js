@@ -1,11 +1,11 @@
-const emscriptenLoader = require('../vendor/edge-fel/edge-fel.js')
+import emscriptenLoader from '../vendor/edge-fel/edge-fel.js';
 
 const Module = require('../vendor/edge-fel/edge-fel')()
 
 let _cachedExtractSome;
 let _cachedFel;
 
-const arrToVector = exports.arrToVector = async (arr, type = 'float') => {
+export const arrToVector = async (arr, type = 'float') => {
     const v = new ((await Module)[`vector${type}`])()
     for (const val of arr) {
         v.push_back(val)
@@ -13,9 +13,9 @@ const arrToVector = exports.arrToVector = async (arr, type = 'float') => {
     return v;
 }
 
-const vectorToArr = exports.vectorToArr = (vector) => new Array(vector.size()).fill(0).map((_, i) => vector.get(i))
+export const vectorToArr = (vector) => new Array(vector.size()).fill(0).map((_, i) => vector.get(i))
 
-const objToMap = exports.objToMap = async (obj, type = 'float') => {
+export const objToMap = async (obj, type = 'float') => {
     const m = new ((await Module)[`mapstring${type}`])()
     for (const [key, val] of Object.entries(obj)) {
         m.set(key, val)
@@ -23,7 +23,7 @@ const objToMap = exports.objToMap = async (obj, type = 'float') => {
     return m;
 }
 
-const mapToObj = exports.mapToObj = (map) => {
+export const mapToObj = (map) => {
     const obj = {}
     const keys = vectorToArr(map.keys())
     for (const key of keys) {
@@ -32,7 +32,7 @@ const mapToObj = exports.mapToObj = (map) => {
     return obj
 }
 
-const extractSome = exports.extractSome = async (features, inArr, params) => {
+export const extractSome = async (features, inArr, params) => {
     const values = await arrToVector(inArr);
     const delegate = await _getFel();
     const ret = delegate.extractSome(features, values, params)

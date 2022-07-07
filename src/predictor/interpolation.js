@@ -5,7 +5,7 @@
  * @param {number} a 
  * @returns {number}
  */
- const lerp = exports.lerp = (x, y, a) => x * (1 - a) + y * a;
+ export const lerp = (x, y, a) => x * (1 - a) + y * a;
  /**
   * in place
   * @param {(number | null)[]} arr
@@ -13,7 +13,7 @@
   * @param {number | undefined} r value for entries after last known, if undefined last known
   * @return {number[]} 
   */
- const interpolateLinear = exports.interpolateLinear = (arr, l, r) => {
+ export const interpolateLinear = (arr, l, r) => {
      let leftmost = l;
      let nullCount = 0;
  

@@ -1,5 +1,5 @@
-const { interpolateLinear } = require('./interpolation')
-const { extractSome, objToMap, arrToVector } = require("./fel")
+import { interpolateLinear } from './interpolation';
+import { extractSome, objToMap, arrToVector } from "./fel";
 
 function cache(fn){
     var NO_RESULT = Symbol("cache");
@@ -10,7 +10,7 @@ function cache(fn){
     };
 }
 
-const PredictorError = exports.PredictorError = class PredictorError extends Error {}
+export const PredictorError = class PredictorError extends Error {}
 
 /**
  * @namespace
@@ -20,7 +20,7 @@ const PredictorError = exports.PredictorError = class PredictorError extends Err
  * @property {string[]} labels 
  * @property {{ [sensorName: string]: [number, number][] }} store
  */
-const Predictor = exports.Predictor = class Predictor {
+export const Predictor = class Predictor {
     /**
      * Predictor
      * @param {(input: number[]) => number[]} predictor 
