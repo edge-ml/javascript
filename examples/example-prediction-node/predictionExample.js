@@ -4,7 +4,7 @@
 
 // this is changed so that the example works in the source directory
 // const { Predictor } = require('edge-ml')
-const { Predictor } = require('..')
+const { Predictor } = require('../..')
 const { score } = require('./model_javascript')
 
 const p = new Predictor(
