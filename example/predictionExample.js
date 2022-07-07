@@ -2,7 +2,9 @@
  * Following code is generated on the deployment page. The dataset used for training this model is in this directory, so you can train it yourselves
  */
 
-const { Predictor } = require('..') // this is changed so that the example works in the source directory
+// this is changed so that the example works in the source directory
+// const { Predictor } = require('edge-ml')
+const { Predictor } = require('..')
 const { score } = require('./model_javascript')
 
 const p = new Predictor(
@@ -27,7 +29,7 @@ const p = new Predictor(
 //         .catch(e => console.log(e.message))
 // }, 250)
 
-/*********************************************************************************************************************************************************************************************************************
+/************************************************************************************************************************************
  * Following part feeds the test.csv file into the predictor and logs the results
  */
 
