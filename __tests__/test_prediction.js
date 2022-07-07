@@ -95,7 +95,7 @@ describe('Feature Extraction', () => {
     });
 
     it('edge-fel has the correct ordering and results', async () => {
-        const [feats, values] = await Predictor._extract(interp, 3)
+        const [feats, values] = await Predictor._extract(interp, 3, { scale: Array(30).fill(1), center: Array(30).fill(0) })
 
         expect(feats).toEqual([
             '0__sum',
