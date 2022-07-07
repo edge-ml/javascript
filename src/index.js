@@ -1,3 +1,4 @@
+const { Predictor } = require('./predictor')
 const axios = require("axios").default;
 
 axios.interceptors.response.use(
@@ -173,4 +174,4 @@ async function datasetCollector(
   }
 }
 
-module.exports = { datasetCollector, sendDataset };
+module.exports = { datasetCollector, sendDataset, Predictor };
