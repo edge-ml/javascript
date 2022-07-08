@@ -1,4 +1,4 @@
-const { Predictor } = require('../src/predictor')
+const { Predictor } = require("../dist/index");
 
 describe('Interpolation', () => {
     let p, z, y, x, time
