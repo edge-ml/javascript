@@ -8,7 +8,7 @@ clean:
 
 src/vendor/edge-fel/edge-fel.js: build/edge-fel
 	mkdir -p src/vendor/edge-fel
-	em++ -sMODULARIZE -lembind -o $@ -O3 -I$</edge-fel/Lib $</edge-fel/Lib/*.cpp
+	em++ -s SINGLE_FILE=1 -sMODULARIZE -lembind -o $@ -O3 -I$</edge-fel/Lib $</edge-fel/Lib/*.cpp
 
 build/edge-fel:
 	mkdir -p $@

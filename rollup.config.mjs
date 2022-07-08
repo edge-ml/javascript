@@ -4,17 +4,17 @@ import commonjs from '@rollup/plugin-commonjs';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import nodePolyfills from 'rollup-plugin-polyfill-node';
 import json from '@rollup/plugin-json';
-import copy from 'rollup-plugin-copy'
+// import copy from 'rollup-plugin-copy'
 
 import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync('./package.json'))
 
-const copyOpts = {
-    targets: [
-        { src: 'src/vendor/edge-fel/edge-fel.wasm', dest: 'dist' }
-    ]
-}
+// const copyOpts = {
+//     targets: [
+//         { src: 'src/vendor/edge-fel/edge-fel.wasm', dest: 'dist' }
+//     ]
+// }
 
 export default [
     // browser-friendly builds
@@ -30,7 +30,7 @@ export default [
             format: 'es'
         }],
         plugins: [
-            copy(copyOpts),
+            // copy(copyOpts),
             nodePolyfills(),
             nodeResolve({ preferBuiltins: true, browser: true }),
             commonjs({ transformMixedEsModules: true, include: ["src/**", "node_modules/**"], strictRequires: true }), // so Rollup can convert to ES module
@@ -50,7 +50,7 @@ export default [
             { file: pkg.module, format: 'es' } // from package.json
         ],
         plugins: [
-            copy(copyOpts),
+            // copy(copyOpts),
             nodeResolve(),
             json(),
             commonjs({ transformMixedEsModules: true, include: ["src/**", "node_modules/**"], strictRequires: true }), // so Rollup can convert to ES module
