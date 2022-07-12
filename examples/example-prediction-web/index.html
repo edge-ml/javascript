@@ -11,7 +11,7 @@
 <body>
 
 <pre id="warn"></pre>
-<h1>Web Sensors (Accelerometer)</h1>
+<h1>devicemotion</h1>
 <div>
     <span>number added datapoints:</span>
     <span id="numberadded">0</span>
@@ -24,12 +24,33 @@
 <script>
     const p = new edgeML.Predictor(
         (input) => score(input),
-        ['AccelerometerX', 'AccelerometerY', 'AccelerometerZ'],
+        ['x', 'y', 'z'],
         50,
         ['Still', 'Shake'],
         {'scale': [79.25000000000001, 1.0, 1.5849999999999997, 1.0, 12.137992715350133, 233.5518440000001, 12.062295477964101, 23.600000000000005, 22.750000000000004, 34.60000000000001, 28.200000000000006, 1.0, 0.5640000000000001, 1.0, 4.851983387175274, 38.78205, 4.859832967726578, 11.0, 12.100000000000001, 12.200000000000003, 70.30000000000001, 0.025000000000000355, 1.4059999999999988, 1.0, 3.715476614703034, 23.929080000000006, 2.565530194566513, 13.850000000000001, 13.850000000000001, 10.100000000000001], 'center': [116.30000000000001, 0.0, 2.326, 50.0, 15.40061349427353, 237.17889599999998, 15.550241155686301, 32.9, 34.5, -34.5, 5.299999999999983, 0.0, 0.10599999999999966, 50.0, 4.708919621314427, 22.173924000000007, 4.756910762248962, 14.200000000000001, 14.200000000000001, -9.700000000000001, 548.0, 9.8, 10.96, 50.0, 3.5930132201259712, 12.909744, 11.87272504524551, 21.3, 21.3, 3.8000000000000003], 'name': 'RobustScaler'}
     )
+</script>
 
+<script>
+    const warn = (...x) => document.getElementById("warn").innerHTML = x
+    const startSensors = async (addDatapoint) => {
+        function handleMotionEvent(event) {
+            const x = event.accelerationIncludingGravity.x;
+            const y = event.accelerationIncludingGravity.y;
+            const z = event.accelerationIncludingGravity.z;
+            const alpha = event.rotationRate.alpha;
+
+            addDatapoint('x', x)
+            addDatapoint('y', y)
+            addDatapoint('z', z)
+            addDatapoint('alpha', alpha)
+        }
+
+        window.addEventListener("devicemotion", handleMotionEvent, true);
+    } 
+</script>
+
+<script>
     const addDatapoint = (...x) => {
         p.addDatapoint(...x)
         document.getElementById("numberadded").innerHTML = parseInt(document.getElementById("numberadded").innerHTML) + 1
@@ -54,48 +75,6 @@
             predict()
         }, 20)
     }
-</script>
-
-<script>
-    const warn = (...x) => document.getElementById("warn").innerHTML = x
-    const startSensors = async (addDatapoint) => {
-        try {
-            if (!navigator.permissions || !navigator.permissions.query) return; // safari doesn't have this
-            await (navigator.permissions
-                .query({ name: 'accelerometer' })
-                .then((result) => {
-                    if (result.state === 'denied') {
-                    throw new Error(`Permission "${'accelerometer'}" is denied.`);
-                    }
-                }));    
-        
-            const sensor = new window.Accelerometer({ frequency: 50 });
-            sensor.onerror = (event) => {
-                // Handle runtime errors.
-                if (event.error.name === 'NotAllowedError') {
-                warn('Permission to access sensor was denied.');
-                } else if (event.error.name === 'NotReadableError') {
-                warn('Cannot connect to the sensor.');
-                }
-            };
-            sensor.onreading = () => {
-                const { x, y, z } = sensor;
-                addDatapoint('AccelerometerX', x)
-                addDatapoint('AccelerometerY', y)
-                addDatapoint('AccelerometerZ', z)
-            };
-            sensor.start();
-            } catch (error) {
-            // Handle construction errors.
-            if (error.name === 'SecurityError') {
-                warn('Sensor construction was blocked by the Permissions Policy.');
-            } else if (error.name === 'ReferenceError') {
-                warn('Sensor is not supported by the User Agent.', error);
-            } else {
-                throw error;
-            }
-        }
-    } 
 </script>
 
 </body>
