@@ -22,7 +22,9 @@
 <pre id="prediction"></pre>
 
 <script>
-    const p = new edgeML.Predictor(
+    const Predictor = edgeML.Predictor;
+    
+    const p = new Predictor(
         (input) => score(input),
         ['x', 'y', 'z'],
         50,

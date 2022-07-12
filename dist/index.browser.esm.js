@@ -554,8 +554,10 @@ const Predictor = class Predictor {
             if (aI !== bI) return aI - bI;
             return Predictor.featuresTSfresh.indexOf(aFeat) - Predictor.featuresTSfresh.indexOf(bFeat)
         });
-        for (let i = 0; i < feats.length; i++) {
-            feats[i][1] = (feats[i][1] - scaler["center"][i]) / scaler["scale"][i];
+        if (scaler) {
+            for (let i = 0; i < feats.length; i++) {
+                feats[i][1] = (feats[i][1] - scaler["center"][i]) / scaler["scale"][i];
+            }
         }
         return [feats.map(x => x[0].join('__')), feats.map(x => x[1])]
     }
