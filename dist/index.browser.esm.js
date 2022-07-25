@@ -404,22 +404,25 @@ function cache(fn){
 
 const PredictorError = class PredictorError extends Error {};
 
+// max number (STORE_MAX_DATAPOINT_FACTOR * windowSize) of unmerged datapoints to store in the store, rest is pruned
+const STORE_MAX_DATAPOINT_FACTOR = 10;
+
 /**
  * @namespace
  * @property {(input: number[]) => number[]} predictor 
  * @property {string[]} sensors 
- * @property {number} windowSize 
+ * @property {number} windowSize if positive, n last merged entries are used as a window, if negative, the absolute value is used as the window length in milliseconds
  * @property {string[]} labels 
- * @property {{ [sensorName: string]: [number, number][] }} store
+ * @property {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler
  */
 const Predictor = class Predictor {
     /**
      * Predictor
      * @param {(input: number[]) => number[]} predictor 
      * @param {string[]} sensors 
-     * @param {number} windowSize 
+     * @param {number} windowSize if positive, n last merged entries are used as a window, if negative, the absolute value is used as the window length in milliseconds
      * @param {string[]} labels 
-     * @param scaler 
+     * @param {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler 
      */
     constructor(predictor, sensors, windowSize, labels, scaler) {
         /** @type {(input: number[]) => number[]} */
@@ -427,11 +430,16 @@ const Predictor = class Predictor {
         /** @type {string[]} */
         this.sensors = sensors;
         /** @type {number} */
-        this.windowSize = windowSize;
+        this.windowSize = Math.abs(windowSize);
         /** @type {string[]} */
         this.labels = labels; 
-
+        /** @type {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} */
         this.scaler = scaler;
+        
+        /** @type {boolean} */
+        this.windowModeMs = windowSize < 0;
+        this.lastPruneTime = 0;
+        this.lastAddTime = 0;
 
         /** @type {{ [sensorName: string]: [number, number][] }} sensorName: [timestamp, value][] */
         this.store = this.sensors.reduce((acc, cur) => {
@@ -451,18 +459,32 @@ const Predictor = class Predictor {
         if (!this.sensors.includes(sensorName)) throw new TypeError('Sensor is not valid');
         if (time === null) time = Date.now();
 
+        this.lastAddTime = time;
         this.store[sensorName].push([time, value]);
 
         this._updateStore();
     }
 
     /**
+     * keeps the store from filling indefinitely
+     * skips pruning if we are within a constant factor of target
      * @private
      */
     _updateStore() {
-        for (const sensorName of this.sensors) {
-            if (this.store[sensorName].length > this.windowSize * 4) {
-                this.store[sensorName] = this.store[sensorName].slice(-2 * this.windowSize);
+        if (this.windowModeMs) {
+            if (this.lastPruneTime + (STORE_MAX_DATAPOINT_FACTOR * this.windowSize) > this.lastAddTime) {
+                return;
+            }
+            
+            this.lastPruneTime = this.lastAddTime;
+            for (const sensorName of this.sensors) {
+                this.store[sensorName] = Predictor._sliceByTime(this.store[sensorName], this.lastAddTime - this.windowSize);
+            }
+        } else {
+            for (const sensorName of this.sensors) {
+                if (this.store[sensorName].length > this.windowSize * STORE_MAX_DATAPOINT_FACTOR * 2) {
+                    this.store[sensorName] = this.store[sensorName].slice(-STORE_MAX_DATAPOINT_FACTOR * this.windowSize);
+                }
             }
         }
     }
@@ -470,9 +492,15 @@ const Predictor = class Predictor {
     predict = async () => {
         const samples = Predictor._merge(this.store, this.sensors);
         // const interpolated = Predictor._interpolate(samples, this.sensors.length) // interpolation is somehow broken?
-        const window = samples.slice(-this.windowSize);
-        if (window.length < this.windowSize) {
-            throw new PredictorError("Not enough samples")
+
+        let window;
+        if (this.windowModeMs) {
+            window = Predictor._sliceByTime(samples, this.lastAddTime - this.windowSize);
+        } else {
+            window = samples.slice(-this.windowSize);
+            if (window.length < this.windowSize) {
+                throw new PredictorError("Not enough samples")
+            }
         }
 
         const [featNames, feats] = await Predictor._extract(window, this.sensors.length, this.scaler);
@@ -482,6 +510,16 @@ const Predictor = class Predictor {
             prediction: this.labels[pred.reduce((iMax, x, i, arr) => x > arr[iMax] ? i : iMax, 0)],
             result: pred,
         }
+    }
+
+    /**
+     * Keeps only entries created after certain time 
+     * @param {((number | null)[])[]} samples [time, ...values][]
+     * @param {number} keepSince Date timestamp, only entries with the same or later timestamps are kept in the result
+     * @return {((number | null)[])[]}
+     */
+    static _sliceByTime(samples, keepSince) {
+        return samples.filter(([time]) => time >= keepSince)
     }
 
     /**
@@ -534,7 +572,7 @@ const Predictor = class Predictor {
      * 
      * @param {(number[])[]} frame 
      * @param {number} sensorsLength
-     * @param scaler
+     * @param {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler
      * @returns {number[]}
      */
     static async _extract(frame, sensorsLength, scaler) {
@@ -544,12 +582,13 @@ const Predictor = class Predictor {
 
         const feats = []; // [features, values]
         for (let i = 0; i < sensorsLength; i++) {
-            const toF = frame.map(x => x[i+1]);
+            const toF = frame.map(x => x[i+1]); // +1, because [0] is time in the frame
             const featureMap = await extractSome(felFeaturesTSfresh, toF, felParams);
             for (const [feat, val] of Object.entries(featureMap)) {
                 feats.push([[i, feat], val]);
             }
         }
+        // sort features with the same sort as the server
         feats.sort(([[aI, aFeat]], [[bI, bFeat]]) => {
             if (aI !== bI) return aI - bI;
             return Predictor.featuresTSfresh.indexOf(aFeat) - Predictor.featuresTSfresh.indexOf(bFeat)
