@@ -12,6 +12,9 @@ function cache(fn){
 
 export const PredictorError = class PredictorError extends Error {}
 
+// max number (STORE_MAX_DATAPOINT_FACTOR * windowSize) of unmerged datapoints to store in the store, rest is pruned
+const STORE_MAX_DATAPOINT_FACTOR = 10;
+
 /**
  * @namespace
  * @property {(input: number[]) => number[]} predictor 
@@ -66,12 +69,14 @@ export const Predictor = class Predictor {
     }
 
     /**
+     * keeps the store from filling indefinitely
+     * skips pruning if we are within a constant factor of target
      * @private
      */
     _updateStore() {
         for (const sensorName of this.sensors) {
-            if (this.store[sensorName].length > this.windowSize * 4) {
-                this.store[sensorName] = this.store[sensorName].slice(-2 * this.windowSize)
+                if (this.store[sensorName].length > this.windowSize * STORE_MAX_DATAPOINT_FACTOR * 2) {
+                    this.store[sensorName] = this.store[sensorName].slice(-STORE_MAX_DATAPOINT_FACTOR * this.windowSize)
             }
         }
     }
@@ -153,12 +158,13 @@ export const Predictor = class Predictor {
 
         const feats = [] // [features, values]
         for (let i = 0; i < sensorsLength; i++) {
-            const toF = frame.map(x => x[i+1]);
+            const toF = frame.map(x => x[i+1]); // +1, because [0] is time in the frame
             const featureMap = await extractSome(felFeaturesTSfresh, toF, felParams)
             for (const [feat, val] of Object.entries(featureMap)) {
                 feats.push([[i, feat], val])
             }
         }
+        // sort features with the same sort as the server
         feats.sort(([[aI, aFeat]], [[bI, bFeat]]) => {
             if (aI !== bI) return aI - bI;
             return Predictor.featuresTSfresh.indexOf(aFeat) - Predictor.featuresTSfresh.indexOf(bFeat)
