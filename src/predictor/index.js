@@ -19,6 +19,7 @@ export const PredictorError = class PredictorError extends Error {}
  * @property {number} windowSize 
  * @property {string[]} labels 
  * @property {{ [sensorName: string]: [number, number][] }} store
+ * @property {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler
  */
 export const Predictor = class Predictor {
     /**
@@ -27,7 +28,7 @@ export const Predictor = class Predictor {
      * @param {string[]} sensors 
      * @param {number} windowSize 
      * @param {string[]} labels 
-     * @param scaler 
+     * @param {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler 
      */
     constructor(predictor, sensors, windowSize, labels, scaler) {
         /** @type {(input: number[]) => number[]} */
@@ -38,7 +39,7 @@ export const Predictor = class Predictor {
         this.windowSize = windowSize;
         /** @type {string[]} */
         this.labels = labels; 
-
+        /** @type {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} */
         this.scaler = scaler;
 
         /** @type {{ [sensorName: string]: [number, number][] }} sensorName: [timestamp, value][] */
@@ -142,7 +143,7 @@ export const Predictor = class Predictor {
      * 
      * @param {(number[])[]} frame 
      * @param {number} sensorsLength
-     * @param scaler
+     * @param {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler
      * @returns {number[]}
      */
     static async _extract(frame, sensorsLength, scaler) {
