@@ -171,8 +171,9 @@ const Predictor = class Predictor {
      * @param {number} windowSize if positive, n last merged entries are used as a window, if negative, the absolute value is used as the window length in milliseconds
      * @param {string[]} labels 
      * @param {{ center: { [featureName: string]: number }, scale: { [featureName: string]: number } }} scaler 
+     * @param {{ windowingMode: "time" | "sample" }} options
      */
-    constructor(predictor, sensors, windowSize, labels, scaler) {
+    constructor(predictor, sensors, windowSize, labels, scaler, { windowingMode = "sample" } = {}) {
         /** @type {(input: number[]) => number[]} */
         this.predictor = predictor;
         /** @type {string[]} */
@@ -185,7 +186,7 @@ const Predictor = class Predictor {
         this.scaler = scaler;
         
         /** @type {boolean} */
-        this.windowModeMs = windowSize < 0;
+        this.windowModeMs = windowSize < 0 || windowingMode === "time";
         this.lastPruneTime = 0;
         this.lastAddTime = 0;
 
