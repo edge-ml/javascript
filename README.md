@@ -33,7 +33,7 @@ const Predictor = require("edge-ml").Predictor;
 
 The functions `sendDataset`, `datasetCollector` and `Predictor` are then accessible as global functions.
 
-## How to use
+<!-- ## How to use
 
 ### Upload datasets as a whole
 
@@ -51,7 +51,7 @@ sendDataset(
     // Handle error
     console.log(err)
   );
-```
+``` -->
 
 ### Upload datasets in increments
 
@@ -125,7 +125,7 @@ try {
 }
 ```
 
-### Prediction
+<!-- ### Prediction
 
 `model_javascript.js` file and the following code can be found after training your models on edge-ml.
 
@@ -155,4 +155,4 @@ setInterval(() => {
         .then(x => x)
         .catch(e => console.log(e.message))
 }, 250)
-```
+``` -->
