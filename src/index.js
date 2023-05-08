@@ -1,4 +1,4 @@
-import axios from "axios";
+const axios = require("axios") 
 
 const UPLOAD_INTERVAL =  5 * 1000;
 
@@ -57,7 +57,10 @@ async function datasetCollector(
   metaData,
   datasetLabel
 ) {
-  const labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]}
+  var labeling = undefined;
+  if (datasetLabel) {
+    labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]}
+  }
 
   const data = await axios.post(url + URLS.initDatasetIncrement + key, {
     name: name,
@@ -159,8 +162,10 @@ async function datasetCollector(
   }
 }
 
-// export default { datasetCollector, sendDataset, Predictor };
-module.exports = {
+const edgeML = {
   datasetCollector: datasetCollector,
   sendDataset: sendDataset
-}
+
+};
+
+export default edgeML;

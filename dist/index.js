@@ -26,9 +26,9 @@ var require$$8__default = /*#__PURE__*/_interopDefaultLegacy(require$$8);
 var require$$1__default$3 = /*#__PURE__*/_interopDefaultLegacy(require$$1$3);
 var require$$6__default = /*#__PURE__*/_interopDefaultLegacy(require$$6);
 
-var axios$1 = {exports: {}};
+var axios$2 = {exports: {}};
 
-var axios = {exports: {}};
+var axios$1 = {exports: {}};
 
 var bind;
 var hasRequiredBind;
@@ -16824,7 +16824,7 @@ function requireIsAxiosError () {
 var hasRequiredAxios$1;
 
 function requireAxios$1 () {
-	if (hasRequiredAxios$1) return axios.exports;
+	if (hasRequiredAxios$1) return axios$1.exports;
 	hasRequiredAxios$1 = 1;
 
 	var utils = requireUtils();
@@ -16858,56 +16858,56 @@ function requireAxios$1 () {
 	}
 
 	// Create the default instance to be exported
-	var axios$1 = createInstance(defaults);
+	var axios = createInstance(defaults);
 
 	// Expose Axios class to allow class inheritance
-	axios$1.Axios = Axios;
+	axios.Axios = Axios;
 
 	// Expose Cancel & CancelToken
-	axios$1.CanceledError = requireCanceledError();
-	axios$1.CancelToken = requireCancelToken();
-	axios$1.isCancel = requireIsCancel();
-	axios$1.VERSION = requireData().version;
-	axios$1.toFormData = requireToFormData();
+	axios.CanceledError = requireCanceledError();
+	axios.CancelToken = requireCancelToken();
+	axios.isCancel = requireIsCancel();
+	axios.VERSION = requireData().version;
+	axios.toFormData = requireToFormData();
 
 	// Expose AxiosError class
-	axios$1.AxiosError = requireAxiosError();
+	axios.AxiosError = requireAxiosError();
 
 	// alias for CanceledError for backward compatibility
-	axios$1.Cancel = axios$1.CanceledError;
+	axios.Cancel = axios.CanceledError;
 
 	// Expose all/spread
-	axios$1.all = function all(promises) {
+	axios.all = function all(promises) {
 	  return Promise.all(promises);
 	};
-	axios$1.spread = requireSpread();
+	axios.spread = requireSpread();
 
 	// Expose isAxiosError
-	axios$1.isAxiosError = requireIsAxiosError();
+	axios.isAxiosError = requireIsAxiosError();
 
-	axios.exports = axios$1;
+	axios$1.exports = axios;
 
 	// Allow use of default import syntax in TypeScript
-	axios.exports.default = axios$1;
-	return axios.exports;
+	axios$1.exports.default = axios;
+	return axios$1.exports;
 }
 
 var hasRequiredAxios;
 
 function requireAxios () {
-	if (hasRequiredAxios) return axios$1.exports;
+	if (hasRequiredAxios) return axios$2.exports;
 	hasRequiredAxios = 1;
 	(function (module) {
 		module.exports = requireAxios$1();
-} (axios$1));
-	return axios$1.exports;
+} (axios$2));
+	return axios$2.exports;
 }
 
-var axiosExports = requireAxios();
+const axios = requireAxios(); 
 
 const UPLOAD_INTERVAL =  5 * 1000;
 
-axiosExports.interceptors.response.use(
+axios.interceptors.response.use(
   function (res) {
     return { status: res.status, text: res.data };
   },
@@ -16939,7 +16939,7 @@ const URLS = {
  * @returns A Promise indicating success or failure
  */
 async function sendDataset(url, key, dataset) {
-  const res = await axiosExports.post(url + URLS.uploadDataset, {
+  const res = await axios.post(url + URLS.uploadDataset, {
     key: key,
     payload: dataset,
   });
@@ -16962,9 +16962,12 @@ async function datasetCollector(
   metaData,
   datasetLabel
 ) {
-  const labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]};
+  var labeling = undefined;
+  if (datasetLabel) {
+    labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]};
+  }
 
-  const data = await axiosExports.post(url + URLS.initDatasetIncrement + key, {
+  const data = await axios.post(url + URLS.initDatasetIncrement + key, {
     name: name,
     metaData: metaData,
     timeSeries: timeSeries,
@@ -17028,7 +17031,7 @@ async function datasetCollector(
 
   async function upload(datasetLabel) {
     const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
-    await axiosExports.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": labeling});
+    await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": labeling});
   }
 
   /**
@@ -17057,8 +17060,10 @@ async function datasetCollector(
   }
 }
 
-// export default { datasetCollector, sendDataset, Predictor };
-module.exports = {
+const edgeML = {
   datasetCollector: datasetCollector,
   sendDataset: sendDataset
+
 };
+
+module.exports = edgeML;
