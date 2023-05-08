@@ -77,6 +77,7 @@ async function datasetCollector(
   var dataStore = { data: [] };
   var lastChecked = Date.now()
   var error = undefined;
+  var timeSeries = timeSeries;
 
   /**
    * Uploads a vlaue for a specific timestamp to a datasets timeSeries with name sensorName
@@ -86,6 +87,11 @@ async function datasetCollector(
    * @returns A Promise indicating success or failure of upload
    */
   function addDataPoint(time, name, value) {
+
+    if (!timeSeries.includes(name)) {
+      throw Error("invalid time-series name")
+    }
+
     if (error) {
       throw new Error(error);
     }
