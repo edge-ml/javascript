@@ -87,7 +87,7 @@
                 await collector.onComplete();
             }
             else {
-                collector = await edgeML.datasetCollector("http://localhost:3004", apiKeyInput.value, "testName", true, ["brightness"], { "min": 0, "max": 255 })
+                collector = await edgeML.datasetCollector("http://localhost:3004", apiKeyInput.value, "testName", true, ["brightness"], { "min": 0, "max": 255 }, "brightness_desk")
                 startTime = Date.now();
                 isRecording = true;
             }

@@ -16965,6 +16965,7 @@ async function datasetCollector(
   var uploadComplete = false;
   var dataStore = { data: [] };
   var lastChecked = Date.now();
+  var timeSeries = timeSeries;
 
   /**
    * Uploads a vlaue for a specific timestamp to a datasets timeSeries with name sensorName
@@ -16974,6 +16975,10 @@ async function datasetCollector(
    * @returns A Promise indicating success or failure of upload
    */
   function addDataPoint(time, name, value) {
+
+    if (!timeSeries.includes(name)) {
+      throw Error("invalid time-series name")
+    }
     if (typeof value !== "number") {
       throw new Error("Datapoint is not a number");
     }
@@ -17013,9 +17018,9 @@ async function datasetCollector(
     }
   }
 
-  async function upload(datasetLabel) {
+  async function upload(uploadLabel) {
     const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
-    await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": labeling});
+    await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": uploadLabel});
   }
 
   /**
@@ -17025,7 +17030,7 @@ async function datasetCollector(
     if (uploadComplete) {
       throw new Error("Dataset is already uploaded");
     }
-    await upload();
+    await upload(labeling);
     uploadComplete = true;
   }
 

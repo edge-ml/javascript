@@ -134,9 +134,9 @@ async function datasetCollector(
     }
   }
 
-  async function upload(datasetLabel) {
+  async function upload(uploadLabel) {
     const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
-    const response = await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": labeling});
+    const response = await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": uploadLabel});
   }
 
   /**
@@ -146,7 +146,7 @@ async function datasetCollector(
     if (uploadComplete) {
       throw new Error("Dataset is already uploaded");
     }
-    await upload(datasetLabel);
+    await upload(labeling);
     if (error) {
       throw new Error(error);
     }

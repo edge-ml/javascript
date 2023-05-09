@@ -1,6 +1,6 @@
 {
     "name": "edge-ml",
-    "version": "4.0.0",
+    "version": "4.0.1",
     "description": "Data collection tool for edge-ml (https://github.com/edge-ml)",
     "main": "dist/index.js",
     "module": "dist/index.esm.js",
