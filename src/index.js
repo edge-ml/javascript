@@ -1,5 +1,6 @@
-import { Predictor } from './predictor';
-import axios from "axios";
+const axios = require("axios") 
+
+const UPLOAD_INTERVAL =  5 * 1000;
 
 axios.interceptors.response.use(
   function (res) {
@@ -11,19 +12,18 @@ axios.interceptors.response.use(
     }
     return Promise.reject(
       error.response.status +
-        ": " +
-        (error.response.data.error
-          ? error.response.data.error
-          : error.response.data)
+      ": " +
+      (error.response.data.error
+        ? error.response.data.error
+        : error.response.data)
     );
   }
 );
 
 const URLS = {
   uploadDataset: "/api/deviceapi/uploadDataset",
-  initDatasetIncrement: "/api/deviceapi/initDatasetIncrement",
-  addDatasetIncrement: "/api/deviceapi/addDatasetIncrement",
-  addDatasetIncrementBatch: "/api/deviceapi/addDatasetIncrementBatch",
+  initDatasetIncrement: "/ds/api/dataset/init/",
+  addDatasetIncrement: "/ds/api/dataset/append/"
 };
 
 /**
@@ -53,125 +53,125 @@ async function datasetCollector(
   key,
   name,
   useDeviceTime,
+  timeSeries,
   metaData,
   datasetLabel
 ) {
-  try {
-    const data = await axios.post(url + URLS.initDatasetIncrement, {
-      deviceApiKey: key,
-      name: name,
-      metaData: metaData,
-    });
+  var labeling = undefined;
+  if (datasetLabel) {
+    labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]}
+  }
 
-    if (!data || !data.text || !data.text.datasetKey) {
-      throw new Error("Could not generate datasetCollector");
-    }
-    const datasetKey = data.text.datasetKey;
+  const data = await axios.post(url + URLS.initDatasetIncrement + key, {
+    name: name,
+    metaData: metaData,
+    timeSeries: timeSeries,
+    labeling: labeling
+  });
+  if (!data || !data.text || !data.text.id) {
+    throw new Error("Could not generate datasetCollector");
+  }
+  const datasetKey = data.text.id;
 
-    var uploadComplete = false;
-    var dataStore = { datasetKey: datasetKey, data: [] };
-    var counter = 0;
-    var error = undefined;
+  var uploadComplete = false;
+  var dataStore = { data: [] };
+  var lastChecked = Date.now()
+  var error = undefined;
+  var timeSeries = timeSeries;
 
-    /**
-     * Uploads a vlaue for a specific timestamp to a datasets timeSeries with name sensorName
-     * @param {string} sensorName - The name of the timeSeries to upload the value to
-     * @param {number} value - The datapoint to upload
-     * @param {number} time - The timestamp assigned to the datapoint
-     * @returns A Promise indicating success or failure of upload
-     */
-    function addDataPoint(time, sensorName, value) {
-      if (error) {
-        throw new Error(error);
-      }
-      if (typeof value !== "number") {
-        throw new Error("Datapoint is not a number");
-      }
-      if (!useDeviceTime && typeof time !== "number") {
-        throw new Error("Provide a valid timestamp");
-      }
+  /**
+   * Uploads a vlaue for a specific timestamp to a datasets timeSeries with name sensorName
+   * @param {string} name - The name of the timeSeries to upload the value to
+   * @param {number} value - The datapoint to upload
+   * @param {number} time - The timestamp assigned to the datapoint
+   * @returns A Promise indicating success or failure of upload
+   */
+  function addDataPoint(time, name, value) {
 
-      if (useDeviceTime) {
-        time = new Date().getTime();
-      }
-
-      value = Math.round(value * 100) / 100;
-
-      if (dataStore.data.every((elm) => elm.sensorname !== sensorName)) {
-        dataStore.data.push({
-          sensorname: sensorName,
-          start: time,
-          end: time,
-          timeSeriesData: [{ timestamp: time, datapoint: value }],
-        });
-      } else {
-        const idx = dataStore.data.findIndex(
-          (elm) => elm.sensorname === sensorName
-        );
-        dataStore.data[idx].timeSeriesData.push({
-          timestamp: time,
-          datapoint: value,
-        });
-
-        if (dataStore.data[idx].start > time) {
-          dataStore.data[idx].start = time;
-        }
-        if (dataStore.data[idx].end < time) {
-          dataStore.data[idx].end = time;
-        }
-      }
-
-      counter++;
-      if (counter > 500) {
-        upload();
-        counter = 0;
-        dataStore = { datasetKey: datasetKey, data: [] };
-      }
+    if (!timeSeries.includes(name)) {
+      throw Error("invalid time-series name")
     }
 
-    async function upload(datasetLabel) {
-      const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
-      try {
-        await axios.post(url + URLS.addDatasetIncrementBatch, {
-          datasetKey: tmp_datastore.datasetKey,
-          data: tmp_datastore.data,
-          datasetLabel: datasetLabel,
-        });
-      } catch (e) {
-        error = "Could not upload data";
-      }
+    if (error) {
+      throw new Error(error);
     }
-
-    /**
-     * Synchronizes the server with the data when you have added all data
-     */
-    async function onComplete() {
-      if (uploadComplete) {
-        throw new Error("Dataset is already uploaded");
-      }
-      await upload(datasetLabel);
-      if (error) {
-        throw new Error(error);
-      }
-      uploadComplete = true;
+    if (typeof value !== "number") {
+      throw new Error("Datapoint is not a number");
+    }
+    if (!useDeviceTime && typeof time !== "number") {
+      throw new Error("Provide a valid timestamp");
     }
 
     if (useDeviceTime) {
-      return {
-        addDataPoint: (sensorName, value) =>
-          addDataPoint(undefined, sensorName, value),
-        onComplete: onComplete,
-      };
-    } else {
-      return {
-        addDataPoint: (time, sensorName, value) =>
-          addDataPoint(time, sensorName, value),
-        onComplete: onComplete,
-      };
+      time = new Date().getTime();
     }
-  } catch (e) {
-    throw e;
+
+    value = Math.round(value * 100) / 100;
+
+    if (dataStore.data.every((elm) => elm.name !== name)) {
+      dataStore.data.push({
+        name: name,
+        data: [[time, value]],
+      });
+    } else {
+      const idx = dataStore.data.findIndex(
+        (elm) => elm.name === name
+      );
+      dataStore.data[idx].data.push([time, value]);
+
+      if (dataStore.data[idx].start > time) {
+        dataStore.data[idx].start = time;
+      }
+      if (dataStore.data[idx].end < time) {
+        dataStore.data[idx].end = time;
+      }
+    }
+
+    if (Date.now() - lastChecked > UPLOAD_INTERVAL) {
+      upload();
+      lastChecked = Date.now();
+      dataStore = { data: [] };
+    }
+  }
+
+  async function upload(datasetLabel) {
+    const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
+    const response = await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": labeling});
+  }
+
+  /**
+   * Synchronizes the server with the data when you have added all data
+   */
+  async function onComplete() {
+    if (uploadComplete) {
+      throw new Error("Dataset is already uploaded");
+    }
+    await upload(datasetLabel);
+    if (error) {
+      throw new Error(error);
+    }
+    uploadComplete = true;
+  }
+
+  if (useDeviceTime) {
+    return {
+      addDataPoint: (sensorName, value) =>
+        addDataPoint(undefined, sensorName, value),
+      onComplete: onComplete,
+    };
+  } else {
+    return {
+      addDataPoint: (time, sensorName, value) =>
+        addDataPoint(time, sensorName, value),
+      onComplete: onComplete,
+    };
   }
 }
 
-export default { datasetCollector, sendDataset, Predictor };
+const edgeML = {
+  datasetCollector: datasetCollector,
+  sendDataset: sendDataset
+
+};
+
+export default edgeML;

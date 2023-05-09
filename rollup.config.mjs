@@ -26,12 +26,12 @@ export default [
             format: 'iife'
         },
         {
+            name: 'edgeML',
             file: pkg.browser['dist/index.esm.js'], // from package.json
             format: 'es'
         }],
         plugins: [
             // copy(copyOpts),
-            nodePolyfills(),
             nodeResolve({ preferBuiltins: true, browser: true }),
             commonjs({ transformMixedEsModules: true, include: ["src/**", "node_modules/**"], strictRequires: true }), // so Rollup can convert to ES module
         ]
