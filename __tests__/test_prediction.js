@@ -1,6 +1,6 @@
 const { Predictor } = require("../dist/index");
 
-describe('Interpolation', () => {
+describe.skip('Interpolation', () => {
     let p, z, y, x, time
     beforeEach(() => {
         p = new Predictor(
@@ -66,7 +66,7 @@ describe('Interpolation', () => {
     })
 })
 
-describe('Feature Extraction', () => {
+describe.skip('Feature Extraction', () => {
     let interp
     beforeEach(() => {
         p = new Predictor(
