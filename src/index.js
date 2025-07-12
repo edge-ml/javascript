@@ -1,3 +1,5 @@
+import { Predictor } from './predictor/index.js';
+
 const axios = require("axios") 
 
 const UPLOAD_INTERVAL =  5 * 1000;
@@ -170,7 +172,8 @@ async function datasetCollector(
 
 const edgeML = {
   datasetCollector: datasetCollector,
-  sendDataset: sendDataset
+  sendDataset: sendDataset,
+  Predictor: Predictor
 
 };
 
