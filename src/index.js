@@ -97,7 +97,7 @@ async function datasetCollector(
       throw new Error(error);
     }
     if (typeof value !== "number") {
-      throw new Error("Datapoint is not a number");
+      throw new Error("DataPoint value is not a number");
     }
     if (!useDeviceTime && typeof time !== "number") {
       throw new Error("Provide a valid timestamp");

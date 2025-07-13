@@ -35,17 +35,18 @@
 
 <script>
     const warn = (...x) => document.getElementById("warn").innerHTML = x
-    const startSensors = async (addDatapoint) => {
+    const startSensors = async (addDataPoint) => {
         function handleMotionEvent(event) {
             const x = event.accelerationIncludingGravity.x;
             const y = event.accelerationIncludingGravity.y;
             const z = event.accelerationIncludingGravity.z;
             const alpha = event.rotationRate.alpha;
+	    const time = Math.floor(event.timeStamp + performance.timeOrigin);
 
-            addDatapoint('x', x)
-            addDatapoint('y', y)
-            addDatapoint('z', z)
-            addDatapoint('alpha', alpha)
+            addDataPoint(time,'x', x)
+            addDataPoint(time,'y', y)
+            addDataPoint(time,'z', z)
+            addDataPoint(time,'alpha', alpha)
         }
 
         window.addEventListener("devicemotion", handleMotionEvent, true);
@@ -53,8 +54,8 @@
 </script>
 
 <script>
-    const addDatapoint = (...x) => {
-        p.addDatapoint(...x)
+    const addDataPoint = (...x) => {
+        p.addDataPoint(...x)
         document.getElementById("numberadded").innerHTML = parseInt(document.getElementById("numberadded").innerHTML) + 1
     }
 
@@ -63,7 +64,7 @@
     }
 
     document.getElementById("startsense").onclick = () => {
-        startSensors(addDatapoint)
+        startSensors(addDataPoint)
     }
 
     document.getElementById("predict").onclick = () => {

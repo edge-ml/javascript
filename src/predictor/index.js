@@ -68,11 +68,11 @@ export const Predictor = class Predictor {
      * @param {number} value 
      */
     addDataPoint = (time, sensorName, value) => {
-        if (typeof value !== 'number') throw new TypeError('Datapoint is not a number');
+        if (typeof value !== 'number') throw new TypeError('DataPoint value is not a number');
         if (!this.sensors.includes(sensorName)) throw new TypeError('Sensor is not valid');
         // TODO: see #16 use if (time === null) time = Date.now()
 	if (!this.useDeviceTime && typeof time !== "number") {
-      		throw new Error("Provide a valid timestamp");
+      		throw new TypeError("Provide a valid timestamp");
 	}
 	if (this.useDeviceTime) {
 		time = Date.now();

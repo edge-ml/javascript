@@ -23,9 +23,9 @@ const p = new Predictor(
  */
 
 // setInterval(() => {
-//     p.addDatapoint('AccelerometerX', getAccelerometerX())
-//     p.addDatapoint('AccelerometerY', getAccelerometerY())
-//     p.addDatapoint('AccelerometerZ', getAccelerometerZ())
+//     p.addDataPoint(Date.now(), 'AccelerometerX', getAccelerometerX())
+//     p.addDataPoint(Date.now(), 'AccelerometerY', getAccelerometerY())
+//     p.addDataPoint(Date.now(), 'AccelerometerZ', getAccelerometerZ())
 
 //     p.predict()
 //         .then(x => x)
@@ -44,7 +44,7 @@ async function runner() {
     for (const { time: ti, ...valObjs } of test) {
         const time = parseInt(ti);
         for (const [key, valStr] of Object.entries(valObjs)) {
-            p.addDatapoint(key, parseInt(valStr), time)
+            p.addDataPoint(time, key, parseInt(valStr))
         }
     
         try {
