@@ -82,15 +82,14 @@ async function datasetCollector(
   var timeSeries = timeSeries;
 
   /**
-   * Uploads a vlaue for a specific timestamp to a datasets timeSeries with name sensorName
-   * @param {string} name - The name of the timeSeries to upload the value to
+   * Uploads a value for a specific timestamp to a dataset's timeSeries with name sensorName
+   * @param {string} sensorName - The name of the timeSeries to upload the value to
    * @param {number} value - The datapoint to upload
    * @param {number} time - The timestamp assigned to the datapoint
-   * @returns A Promise indicating success or failure of upload
    */
-  function addDataPoint(time, name, value) {
+  function addDataPoint(time, sensorName, value) {
 
-    if (!timeSeries.includes(name)) {
+    if (!timeSeries.includes(sensorName)) {
       throw Error("invalid time-series name")
     }
 
@@ -110,14 +109,14 @@ async function datasetCollector(
 
     value = Math.round(value * 100) / 100;
 
-    if (dataStore.data.every((elm) => elm.name !== name)) {
+    if (dataStore.data.every((elm) => elm.name !== sensorName)) {
       dataStore.data.push({
-        name: name,
+        name: sensorName,
         data: [[time, value]],
       });
     } else {
       const idx = dataStore.data.findIndex(
-        (elm) => elm.name === name
+        (elm) => elm.name === sensorName
       );
       dataStore.data[idx].data.push([time, value]);
 
