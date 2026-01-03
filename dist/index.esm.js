@@ -16910,9 +16910,9 @@ axios.interceptors.response.use(
 );
 
 const URLS = {
-  uploadDataset: "/api/deviceapi/uploadDataset",
-  initDatasetIncrement: "/ds/api/dataset/init/",
-  addDatasetIncrement: "/ds/api/dataset/append/"
+  uploadDataset: "/api/v1/deviceapi/uploadDataset",
+  initDatasetIncrement: "/api/v1/deviceapi/dataset/init/",
+  addDatasetIncrement: "/api/v1/deviceapi/dataset/append/"
 };
 
 /**
