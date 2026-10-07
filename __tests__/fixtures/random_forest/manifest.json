@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "format": "onnx",
+  "model_name": "test_model",
+  "model_id": "000000000000000000000000",
+  "opset": 17,
+  "sampling_rate": 25.0,
+  "window": {
+    "size": 20,
+    "stride": 10,
+    "unit": "samples"
+  },
+  "input": {
+    "name": "raw_window",
+    "shape": [
+      1,
+      20,
+      3
+    ],
+    "dtype": "float32",
+    "layout": "window x channel",
+    "timeseries": [
+      "x",
+      "y",
+      "z"
+    ]
+  },
+  "preprocessing": {
+    "baked": [
+      "SimpleFeatureExtractor",
+      "MinMaxNormalizer"
+    ],
+    "on_device": [
+      "windowing"
+    ]
+  },
+  "output": {
+    "name": "scores",
+    "type": "probabilities",
+    "labels": [
+      "class_0",
+      "class_1"
+    ]
+  },
+  "classification_frequency_hint_hz": 2.5
+}

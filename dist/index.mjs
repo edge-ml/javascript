@@ -175,23 +175,28 @@ class SampleBuffer {
   }
 }
 
-// Browser implementation (swapped in for platform.node.js by the browser builds).
-// The runtime is not imported here so that apps which only collect data do not
-// need onnxruntime-web: it is taken from the global `ort` of
-// <script src=".../onnxruntime-web/dist/ort.min.js">, or passed in with
-// OnnxPredictor.setRuntime(ort) / { ort } when using a bundler.
+// Node.js implementation (the browser builds swap in platform.browser.js).
 
+const pickOrt = (m) => (m && m.InferenceSession ? m : m && m.default && m.default.InferenceSession ? m.default : null);
+
+/** Loads onnxruntime-node, falling back to onnxruntime-web. */
 async function loadRuntime() {
-  const g = typeof globalThis !== "undefined" ? globalThis : window;
-  return g.ort && g.ort.InferenceSession ? g.ort : null;
+  for (const load of [() => import('onnxruntime-node'), () => import('onnxruntime-web')]) {
+    try {
+      const ort = pickOrt(await load());
+      if (ort) return ort;
+    } catch (e) {
+      // not installed — try the next one
+    }
+  }
+  return null;
 }
 
-const RUNTIME_HINT =
-  'add <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>, ' +
-  'or `import * as ort from "onnxruntime-web"` and call OnnxPredictor.setRuntime(ort)';
+const RUNTIME_HINT = "npm install onnxruntime-node";
 
-async function readFile() {
-  throw new Error("OnnxPredictor.fromFiles is only available in Node.js; use fromUrls in the browser");
+async function readFile(path) {
+  const fs = await import('fs');
+  return (fs.promises || fs.default.promises).readFile(path);
 }
 
 const enc = encodeURIComponent;
@@ -373,7 +378,7 @@ class OnnxPredictor {
    * @param {{ ort?: any, sessionOptions?: object }} [opts]
    */
   static async fromFiles(modelPath, manifestPath, opts) {
-    const [model, manifest] = await Promise.all([readFile(), readFile()]);
+    const [model, manifest] = await Promise.all([readFile(modelPath), readFile(manifestPath)]);
     return OnnxPredictor.load(model, JSON.parse(manifest.toString()), opts);
   }
 

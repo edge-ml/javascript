@@ -1,31 +1,85 @@
 {
     "name": "edge-ml",
     "version": "4.0.1",
-    "description": "Data collection tool for edge-ml (https://github.com/edge-ml)",
+    "description": "JavaScript library for edge-ml (https://github.com/edge-ml): collect data, train models and run them in the browser or Node.js",
     "main": "dist/index.js",
-    "module": "dist/index.esm.js",
+    "module": "dist/index.mjs",
     "browser": {
         "dist/index.js": "dist/index.browser.js",
-        "dist/index.esm.js": "dist/index.browser.esm.js"
+        "dist/index.mjs": "dist/index.browser.esm.js"
+    },
+    "unpkg": "dist/index.browser.js",
+    "jsdelivr": "dist/index.browser.js",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts",
+            "browser": {
+                "import": "./dist/index.browser.esm.js",
+                "default": "./dist/index.browser.js"
+            },
+            "import": "./dist/index.mjs",
+            "default": "./dist/index.js"
+        },
+        "./dist/*": "./dist/*",
+        "./package.json": "./package.json"
+    },
+    "types": "index.d.ts",
+    "files": [
+        "dist",
+        "index.d.ts",
+        "README.md",
+        "LICENSE"
+    ],
+    "engines": {
+        "node": ">=18"
     },
     "scripts": {
-        "test": "jest test --coverage",
         "build": "rollup -c",
-        "vendor:edge-fel": "make edge-fel",
-        "prepare": "husky install"
+        "test": "jest --coverage",
+        "test:browser": "node scripts/check-browser-bundle.js",
+        "prepare": "husky install",
+        "prepublishOnly": "npm run build && npm test && npm run test:browser",
+        "test:integration": "jest --testPathIgnorePatterns /node_modules/ /fixtures/ --testMatch '**/__tests__/*integration.test.js'"
     },
     "license": "MIT",
-    "dependencies": {
-        "axios": "^0.27.2"
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/edge-ml/javascript.git"
+    },
+    "keywords": [
+        "edge-ml",
+        "machine-learning",
+        "onnx",
+        "sensors",
+        "time-series"
+    ],
+    "peerDependencies": {
+        "onnxruntime-node": ">=1.17",
+        "onnxruntime-web": ">=1.17"
+    },
+    "peerDependenciesMeta": {
+        "onnxruntime-node": {
+            "optional": true
+        },
+        "onnxruntime-web": {
+            "optional": true
+        }
     },
     "devDependencies": {
-        "@rollup/plugin-commonjs": "^22.0.1",
-        "@rollup/plugin-json": "^4.1.0",
-        "@rollup/plugin-node-resolve": "^13.3.0",
+        "@rollup/plugin-alias": "^5.1.1",
+        "axios": "^1.7.0",
         "husky": "^7.0.4",
-        "jest": "^28.0.3",
-        "rollup": "^2.75.7",
-        "rollup-plugin-copy": "^3.4.0",
-        "rollup-plugin-polyfill-node": "^0.10.0"
+        "jest": "^29.7.0",
+        "onnxruntime-node": "^1.30.0",
+        "onnxruntime-web": "^1.30.0",
+        "rollup": "^4.0.0"
+    },
+    "jest": {
+        "testEnvironment": "./jest.environment.js",
+        "testPathIgnorePatterns": [
+            "/node_modules/",
+            "/fixtures/",
+            "integration\\.test\\.js$"
+        ]
     }
 }

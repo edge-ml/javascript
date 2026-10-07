@@ -1,59 +1,44 @@
-// rollup.config.js
-// import { globbySync as globby } from 'globby';
-import commonjs from '@rollup/plugin-commonjs';
-import { nodeResolve } from '@rollup/plugin-node-resolve';
-import nodePolyfills from 'rollup-plugin-polyfill-node';
-import json from '@rollup/plugin-json';
-// import copy from 'rollup-plugin-copy'
+import alias from '@rollup/plugin-alias';
+import { fileURLToPath } from 'url';
 
-import { readFileSync } from 'fs';
+const src = (file) => fileURLToPath(new URL(`./src/${file}`, import.meta.url));
 
-const pkg = JSON.parse(readFileSync('./package.json'))
+// The ONNX runtimes are optional peer dependencies: never bundled, loaded at
+// runtime only when a model is used.
+const nodeExternal = ['onnxruntime-node', 'onnxruntime-web', 'fs'];
 
-// const copyOpts = {
-//     targets: [
-//         { src: 'src/vendor/edge-fel/edge-fel.wasm', dest: 'dist' }
-//     ]
-// }
+// no Node-only code (onnxruntime-node, fs) in browser builds
+const browserPlugins = () => [
+    alias({ entries: [{ find: /^\.\/platform\.node$/, replacement: src('onnx/platform.browser.js') }] }),
+];
 
+// index.js has named exports plus a default export (ES modules);
+// index.default.js only the default (CommonJS module.exports / edgeML global).
+// The browser default build is UMD: a <script> global and require()-able by bundlers.
 export default [
-    // browser-friendly builds
+    // browser builds (script tag / bundlers via the package.json "browser" field)
+    {
+        input: 'src/index.default.js',
+        output: { name: 'edgeML', file: 'dist/index.browser.js', format: 'umd', exports: 'default' },
+        plugins: browserPlugins(),
+    },
     {
         input: 'src/index.js',
-        output: [{
-            name: 'edgeML',
-            file: pkg.browser['dist/index.js'], // from package.json
-            format: 'iife'
-        },
-        {
-            name: 'edgeML',
-            file: pkg.browser['dist/index.esm.js'], // from package.json
-            format: 'es'
-        }],
-        plugins: [
-            // copy(copyOpts),
-            nodeResolve({ preferBuiltins: true, browser: true }),
-            commonjs({ transformMixedEsModules: true, include: ["src/**", "node_modules/**"], strictRequires: true }), // so Rollup can convert to ES module
-        ]
+        output: { file: 'dist/index.browser.esm.js', format: 'es' },
+        plugins: browserPlugins(),
     },
 
-    // CommonJS (for Node) and ES module (for bundlers) build.
-    // (We could have three entries in the configuration array
-    // instead of two, but it's quicker to generate multiple
-    // builds from a single configuration where possible, using
-    // an array for the `output` option, where we can specify 
-    // `file` and `format` for each target)
+    // Node.js builds
+    {
+        input: 'src/index.default.js',
+        external: nodeExternal,
+        // require() rather than import() for the lazily loaded runtimes, so the
+        // CJS build also works where dynamic import is unavailable (e.g. Jest)
+        output: { file: 'dist/index.js', format: 'cjs', exports: 'default', dynamicImportInCjs: false },
+    },
     {
         input: 'src/index.js',
-        output: [
-            { file: pkg.main, format: 'cjs' }, // from package.json
-            { file: pkg.module, format: 'es' } // from package.json
-        ],
-        plugins: [
-            // copy(copyOpts),
-            nodeResolve(),
-            json(),
-            commonjs({ transformMixedEsModules: true, include: ["src/**", "node_modules/**"], strictRequires: true }), // so Rollup can convert to ES module
-        ]
+        external: nodeExternal,
+        output: { file: 'dist/index.mjs', format: 'es' },
     },
 ];

@@ -1,27 +1,11 @@
-const axios = require("axios") 
+import { http } from "./http";
+import { PredictorError } from "./errors";
+import { OnnxPredictor, loadModel } from "./onnx/OnnxPredictor";
+import { listPipelines, startTraining, trainModel, waitForModel, getModel, listModels } from "./training";
 
-const UPLOAD_INTERVAL =  5 * 1000;
-
-axios.interceptors.response.use(
-  function (res) {
-    return { status: res.status, text: res.data };
-  },
-  function (error) {
-    if (!error.response) {
-      return Promise.reject("Server error");
-    }
-    return Promise.reject(
-      error.response.status +
-      ": " +
-      (error.response.data.error
-        ? error.response.data.error
-        : error.response.data)
-    );
-  }
-);
+const UPLOAD_INTERVAL = 5 * 1000;
 
 const URLS = {
-  uploadDataset: "/api/v1/deviceapi/uploadDataset",
   initDatasetIncrement: "/api/v1/deviceapi/dataset/init/",
   addDatasetIncrement: "/api/v1/deviceapi/dataset/append/"
 };
@@ -29,16 +13,33 @@ const URLS = {
 /**
  * Uploads a whole dataset to a specific project
  * @param {string} url - The url of the backend server
- * @param {string} key - The Device-Api-Key
- * @param {object} dataset - The dataset to upload
- * @returns A Promise indicating success or failure
+ * @param {string} key - The Device-Api-Key (write access)
+ * @param {{ name: string, timeSeries: { name: string, data: [number, number][] }[], metaData?: { [key: string]: string }, labeling?: string }} dataset
+ *   time-series data as [unix ms, value] pairs; labeling as "{labeling}_{label}" for the whole dataset
+ * @returns {Promise<string>} The id of the created dataset
  */
 async function sendDataset(url, key, dataset) {
-  const res = await axios.post(url + URLS.uploadDataset, {
-    key: key,
-    payload: dataset,
+  if (!dataset || !dataset.name || !Array.isArray(dataset.timeSeries)) {
+    throw new Error("dataset needs a name and a timeSeries array");
+  }
+  const init = await http.post(url, URLS.initDatasetIncrement + key, {
+    name: dataset.name,
+    metaData: dataset.metaData || {},
+    timeSeries: dataset.timeSeries.map((ts) => ts.name),
   });
-  return res.text.message;
+  if (!init || !init.id) {
+    throw new Error("Could not create dataset");
+  }
+  let labeling = undefined;
+  if (dataset.labeling) {
+    const [labelingName, labelName] = dataset.labeling.split("_");
+    labeling = { labelingName, labelName };
+  }
+  await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
+    data: dataset.timeSeries.map((ts) => ({ name: ts.name, data: ts.data })),
+    labeling: labeling,
+  });
+  return init.id;
 }
 
 /**
@@ -62,16 +63,16 @@ async function datasetCollector(
     labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]}
   }
 
-  const data = await axios.post(url + URLS.initDatasetIncrement + key, {
+  const data = await http.post(url, URLS.initDatasetIncrement + key, {
     name: name,
     metaData: metaData,
     timeSeries: timeSeries,
     labeling: labeling
   });
-  if (!data || !data.text || !data.text.id) {
+  if (!data || !data.id) {
     throw new Error("Could not generate datasetCollector");
   }
-  const datasetKey = data.text.id;
+  const datasetKey = data.id;
 
   var uploadComplete = false;
   var dataStore = { data: [] };
@@ -128,7 +129,10 @@ async function datasetCollector(
     }
 
     if (Date.now() - lastChecked > UPLOAD_INTERVAL) {
-      upload();
+      // background upload: a failure is reported by the next addDataPoint / onComplete
+      upload().catch((e) => {
+        error = e.message;
+      });
       lastChecked = Date.now();
       dataStore = { data: [] };
     }
@@ -136,7 +140,7 @@ async function datasetCollector(
 
   async function upload(uploadLabel) {
     const tmp_datastore = JSON.parse(JSON.stringify(dataStore));
-    const response = await axios.post(url + URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": uploadLabel});
+    await http.post(url, URLS.addDatasetIncrement + key + "/" + datasetKey, {"data": tmp_datastore.data, "labeling": uploadLabel});
   }
 
   /**
@@ -169,9 +173,33 @@ async function datasetCollector(
 }
 
 const edgeML = {
+  // data collection
   datasetCollector: datasetCollector,
-  sendDataset: sendDataset
-
+  sendDataset: sendDataset,
+  // training on the edge-ml server
+  listPipelines: listPipelines,
+  trainModel: trainModel,
+  startTraining: startTraining,
+  waitForModel: waitForModel,
+  getModel: getModel,
+  listModels: listModels,
+  // inference
+  loadModel: loadModel,
+  OnnxPredictor: OnnxPredictor,
+  PredictorError: PredictorError,
 };
 
 export default edgeML;
+export {
+  datasetCollector,
+  sendDataset,
+  listPipelines,
+  trainModel,
+  startTraining,
+  waitForModel,
+  getModel,
+  listModels,
+  loadModel,
+  OnnxPredictor,
+  PredictorError,
+};

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>edge-ml: train and predict in the browser</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <script src="https://unpkg.com/edge-ml"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin: .5rem 0; }
+    input { width: 100%; }
+    pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Train and predict</h1>
+  <p>
+    Records your phone's motion sensor into an edge-ml project, trains a model on the
+    server and runs it in this page with onnxruntime-web.
+  </p>
+
+  <label>edge-ml URL <input id="url" value="https://app.edge-ml.org"></label>
+  <label>Device API write key <input id="key"></label>
+  <label>Labeling <input id="labeling" value="motion"></label>
+
+  <h2>1. Record</h2>
+  <label>Label <input id="label" value="still"></label>
+  <button id="record">Record 10 s</button>
+
+  <h2>2. Train</h2>
+  <button id="train">Train model</button>
+
+  <h2>3. Predict</h2>
+  <button id="predict">Start predicting</button>
+
+  <pre id="log"></pre>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const log = (msg) => ($("log").textContent = msg + "\n" + $("log").textContent);
+  const SENSORS = ["accX", "accY", "accZ"];
+  let model = null;
+
+  // devicemotion needs a permission prompt on iOS
+  async function onMotion(handler) {
+    if (typeof DeviceMotionEvent !== "undefined" && DeviceMotionEvent.requestPermission) {
+      await DeviceMotionEvent.requestPermission();
+    }
+    const listener = (e) => {
+      const a = e.accelerationIncludingGravity;
+      if (a && a.x !== null) handler({ accX: a.x, accY: a.y, accZ: a.z });
+    };
+    window.addEventListener("devicemotion", listener);
+    return () => window.removeEventListener("devicemotion", listener);
+  }
+
+  $("record").onclick = async () => {
+    const label = $("label").value;
+    const collector = await edgeML.datasetCollector(
+      $("url").value, $("key").value, `${label}-${Date.now()}`, true, SENSORS, {}, `${$("labeling").value}_${label}`
+    );
+    const stop = await onMotion((s) => SENSORS.forEach((n) => collector.addDataPoint(n, s[n])));
+    log(`recording '${label}'…`);
+    setTimeout(async () => {
+      stop();
+      await collector.onComplete();
+      log(`uploaded '${label}'. Record at least two different labels, then train.`);
+    }, 10000);
+  };
+
+  $("train").onclick = async () => {
+    log("training…");
+    try {
+      model = await edgeML.trainModel($("url").value, $("key").value, {
+        name: `browser-${Date.now()}`,
+        labeling: $("labeling").value,
+        timeSeries: SENSORS,
+      }, { onProgress: (m) => log(`${m.trainStatus} ${m.stage || ""} ${m.progress ?? ""}`) });
+      log(`trained ${model.name}: ${JSON.stringify(model.metrics)}`);
+    } catch (e) {
+      log(e.message);
+    }
+  };
+
+  $("predict").onclick = async () => {
+    if (!model) return log("train a model first");
+    const predictor = await edgeML.loadModel($("url").value, $("key").value, model.id);
+    await onMotion((s) => predictor.addSample(s));
+    setInterval(async () => {
+      try {
+        const { prediction, probabilities } = await predictor.predict();
+        log(`${prediction} (${(Math.max(...probabilities) * 100).toFixed(0)} %)`);
+      } catch (e) {
+        if (!(e instanceof edgeML.PredictorError)) log(e.message);
+      }
+    }, 500);
+  };
+</script>
+</body>
+</html>

@@ -13,33 +13,38 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 12
+          node-version: 20
       - run: npm ci
+        env:
+          # CPU binaries ship with the package; skip the optional CUDA download
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      - run: npm run build
       - run: npm test
+      - run: npm run test:browser
 
   publish-npm:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - id: check
         uses: EndBug/version-check@v1
         with:
           file-url: https://unpkg.com/edge-ml@latest/package.json
           static-checking: localIsNew
           file-name: package.json
-      - uses: actions/checkout@v2
-        if: steps.check.outputs.changed == 'true'
-      - uses: actions/setup-node@v2
+      - uses: actions/setup-node@v4
         if: steps.check.outputs.changed == 'true'
         with:
-          node-version: 12
+          node-version: 20
           registry-url: https://registry.npmjs.org/
       - run: npm ci
         if: steps.check.outputs.changed == 'true'
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
       - run: npm publish
         if: steps.check.outputs.changed == 'true'
         env:
