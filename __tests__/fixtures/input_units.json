@@ -1,0 +1,50 @@
+[
+  {
+    "name": "x",
+    "quantity": "acceleration",
+    "unit": "m/s^2",
+    "conversions": {
+      "m/s^2": {
+        "scale": 1.0,
+        "offset": 0.0
+      },
+      "g": {
+        "scale": 9.80665,
+        "offset": 0.0
+      },
+      "mg": {
+        "scale": 0.00980665,
+        "offset": 0.0
+      },
+      "cm/s^2": {
+        "scale": 0.01,
+        "offset": 0.0
+      }
+    }
+  },
+  {
+    "name": "y",
+    "quantity": "temperature",
+    "unit": "degC",
+    "conversions": {
+      "degC": {
+        "scale": 1.0,
+        "offset": 0.0
+      },
+      "K": {
+        "scale": 1.0,
+        "offset": -273.15
+      },
+      "degF": {
+        "scale": 0.5555555555555556,
+        "offset": -17.77777777777778
+      }
+    }
+  },
+  {
+    "name": "z",
+    "quantity": "strain",
+    "unit": "ue",
+    "conversions": {}
+  }
+]

@@ -40,6 +40,9 @@
   const $ = (id) => document.getElementById(id);
   const log = (msg) => ($("log").textContent = msg + "\n" + $("log").textContent);
   const SENSORS = ["accX", "accY", "accZ"];
+  // devicemotion reports acceleration in m/s²
+  const UNITS = { accX: "m/s^2", accY: "m/s^2", accZ: "m/s^2" };
+  const SERIES = SENSORS.map((name) => ({ name, unit: UNITS[name], quantity: "acceleration" }));
   let model = null;
 
   // devicemotion needs a permission prompt on iOS
@@ -58,7 +61,7 @@
   $("record").onclick = async () => {
     const label = $("label").value;
     const collector = await edgeML.datasetCollector(
-      $("url").value, $("key").value, `${label}-${Date.now()}`, true, SENSORS, {}, `${$("labeling").value}_${label}`
+      $("url").value, $("key").value, `${label}-${Date.now()}`, true, SERIES, {}, `${$("labeling").value}_${label}`
     );
     const stop = await onMotion((s) => SENSORS.forEach((n) => collector.addDataPoint(n, s[n])));
     log(`recording '${label}'…`);
@@ -85,7 +88,7 @@
 
   $("predict").onclick = async () => {
     if (!model) return log("train a model first");
-    const predictor = await edgeML.loadModel($("url").value, $("key").value, model.id);
+    const predictor = await edgeML.loadModel($("url").value, $("key").value, model.id, { units: UNITS });
     await onMotion((s) => predictor.addSample(s));
     setInterval(async () => {
       try {

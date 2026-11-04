@@ -295,6 +295,105 @@
     ]);
   }
 
+  /**
+   * Thrown when a sensor unit cannot be converted to the unit a model expects,
+   * so the app gets an error instead of wrong predictions.
+   */
+  class UnitError extends Error {}
+
+  /**
+   * Fetches the unit catalog of the edge-ml server: every quantity with its
+   * units and the unit models expect (`defaultUnit`). No API key needed.
+   * @param {string} url - The url of the backend server
+   * @returns {Promise<import("../index").UnitCatalog>}
+   */
+  function fetchUnits(url) {
+    return http.get(url, "/ml/units/");
+  }
+
+  /**
+   * Time-series as given by the app: a plain name, or `{ name, unit?, quantity? }`.
+   * @param {string | { name: string, unit?: string, quantity?: string }} ts
+   * @returns {{ name: string, unit?: string, quantity?: string }}
+   */
+  function seriesSpec(ts) {
+    if (typeof ts === "string") return { name: ts };
+    if (!ts || typeof ts.name !== "string" || !ts.name) {
+      throw new TypeError("A time-series needs a name, e.g. \"accX\" or { name: \"accX\", unit: \"g\", quantity: \"acceleration\" }");
+    }
+    return ts;
+  }
+
+  /**
+   * The time-series entry of a dataset init request. Plain names stay plain
+   * strings, so servers without unit support keep accepting them.
+   */
+  function initEntry(ts) {
+    const { name, unit, quantity } = seriesSpec(ts);
+    if (!unit && !quantity) return name;
+    return { name, unit: unit || "", quantity: quantity || null };
+  }
+
+  /**
+   * The expected unit of every model input, from `manifest.input.units`.
+   * Exports made before units existed have none: every input is unknown.
+   * @returns {import("../index").InputUnit[]}
+   */
+  function manifestUnits(manifest) {
+    const names = manifest.input.timeseries;
+    const byName = {};
+    for (const u of manifest.input.units || []) byName[u.name] = u;
+    return names.map((name) => {
+      const u = byName[name] || {};
+      return { name, quantity: u.quantity || null, unit: u.unit || "", conversions: u.conversions || {} };
+    });
+  }
+
+  const isUnknown = (input) => !input.quantity && !input.unit;
+
+  /** The catalog unit id of `unit` within `quantityId`, matching ids, labels and aliases. */
+  function catalogUnitId(catalog, quantityId, unit) {
+    const quantity = catalog && (catalog.quantities || []).find((q) => q.id === quantityId);
+    if (!quantity) return null;
+    const match = quantity.units.find((u) => u.id === unit || u.label === unit || (u.aliases || []).includes(unit));
+    return match ? match.id : null;
+  }
+
+  /**
+   * Works out how to convert each input from the unit the app delivers to the
+   * unit the model expects.
+   *
+   * @param {import("../index").InputUnit[]} inputs - from `manifestUnits`
+   * @param {{ [sensor: string]: string }} sensorUnits - unit each sensor delivers; sensors the model does not use are ignored
+   * @param {import("../index").UnitCatalog} [catalog] - optional, to also accept unit labels and aliases (e.g. "°C")
+   * @returns {({ scale: number, offset: number } | null)[]} per input, null = pass values through
+   */
+  function resolveConversions(inputs, sensorUnits, catalog) {
+    return inputs.map((input) => {
+      const unit = sensorUnits ? sensorUnits[input.name] : undefined;
+      if (unit === undefined || unit === null) return null;
+      if (typeof unit !== "string") throw new TypeError(`The unit of '${input.name}' must be a string`);
+      // trained before units existed, or on data of unknown unit: values go in as they are
+      if (isUnknown(input)) return null;
+
+      let conv = input.conversions[unit];
+      if (!conv && unit !== input.unit && input.quantity) {
+        const id = catalogUnitId(catalog, input.quantity, unit);
+        if (id) conv = input.conversions[id] || (id === input.unit ? { scale: 1, offset: 0 } : undefined);
+      }
+      if (!conv && unit === input.unit) conv = { scale: 1, offset: 0 };
+      if (!conv) {
+        const accepted = Object.keys(input.conversions);
+        const expected = `${input.unit || "no unit"}${input.quantity ? ` (${input.quantity})` : ""}`;
+        throw new UnitError(
+          `'${input.name}' is declared in '${unit}', but the model expects ${expected} and cannot convert from '${unit}'. ` +
+            (accepted.length > 1 ? `Accepted units: ${accepted.join(", ")}.` : `Deliver it in ${input.unit || "the unit it was trained on"}.`)
+        );
+      }
+      return conv.scale === 1 && conv.offset === 0 ? null : { scale: conv.scale, offset: conv.offset };
+    });
+  }
+
   let runtime = null;
 
   async function getRuntime(ort) {
@@ -324,8 +423,9 @@
      * @param {any} session - ort.InferenceSession
      * @param {any} manifest - manifest.json of the export
      * @param {any} ort - the onnxruntime module
+     * @param {{ units?: { [sensor: string]: string }, catalog?: object }} [unitOptions]
      */
-    constructor(session, manifest, ort) {
+    constructor(session, manifest, ort, { units, catalog } = {}) {
       if (!manifest || manifest.format !== "onnx") throw new Error("Not an edge-ml ONNX manifest");
       this.session = session;
       this.manifest = manifest;
@@ -337,6 +437,28 @@
       /** @type {number} */
       this.windowSize = manifest.window.size;
       this.buffer = new SampleBuffer(this.sensors, this.windowSize);
+      /**
+       * Unit the model expects for each input, with conversions from other units.
+       * Inputs of models trained before units existed have quantity null and unit "".
+       * @type {import("../../index").InputUnit[]}
+       */
+      this.inputUnits = manifestUnits(manifest);
+      this._conversions = this.sensors.map(() => null);
+      this._catalog = catalog;
+      if (units) this.setUnits(units);
+    }
+
+    /**
+     * Declares the unit each sensor delivers, e.g. `{ accX: "g" }`. Values are
+     * then converted to the unit the model expects before predicting. Sensors
+     * left out (and inputs of models without unit information) are passed through.
+     * Throws a UnitError if the model cannot convert from a declared unit.
+     * @param {{ [sensor: string]: string }} units
+     * @param {object} [catalog] - from `fetchUnits`, to also accept unit labels and aliases like "°C"
+     */
+    setUnits(units, catalog = this._catalog) {
+      this._conversions = resolveConversions(this.inputUnits, units || {}, catalog);
+      this._catalog = catalog;
     }
 
     /**
@@ -350,19 +472,21 @@
     /**
      * @param {ArrayBuffer | Uint8Array} model - bytes of model.onnx
      * @param {object} manifest - parsed manifest.json
-     * @param {{ ort?: any, sessionOptions?: object }} [opts]
+     * @param {{ ort?: any, sessionOptions?: object, units?: { [sensor: string]: string }, catalog?: object }} [opts]
      */
-    static async load(model, manifest, { ort, sessionOptions } = {}) {
+    static async load(model, manifest, { ort, sessionOptions, units, catalog } = {}) {
+      // check the units before creating the session, so a mistake fails fast
+      if (units) resolveConversions(manifestUnits(manifest), units, catalog);
       const rt = await getRuntime(ort);
       const session = await rt.InferenceSession.create(toBytes(model), sessionOptions);
-      return new OnnxPredictor(session, manifest, rt);
+      return new OnnxPredictor(session, manifest, rt, { units, catalog });
     }
 
     /**
      * Loads model.onnx and manifest.json from URLs (e.g. an unzipped download from edge-ml).
      * @param {string} modelUrl
      * @param {string} manifestUrl
-     * @param {{ ort?: any, sessionOptions?: object }} [opts]
+     * @param {import("../../index").LoadOptions} [opts]
      */
     static async fromUrls(modelUrl, manifestUrl, opts) {
       const [model, manifest] = await Promise.all([
@@ -376,7 +500,7 @@
      * Node.js only: loads model.onnx and manifest.json from disk.
      * @param {string} modelPath
      * @param {string} manifestPath
-     * @param {{ ort?: any, sessionOptions?: object }} [opts]
+     * @param {import("../../index").LoadOptions} [opts]
      */
     static async fromFiles(modelPath, manifestPath, opts) {
       const [model, manifest] = await Promise.all([readFile(), readFile()]);
@@ -388,7 +512,7 @@
      * @param {string} url - The url of the backend server
      * @param {string} key - A Device-Api-Key (read or write)
      * @param {string} modelId
-     * @param {{ ort?: any, sessionOptions?: object }} [opts]
+     * @param {import("../../index").LoadOptions} [opts]
      */
     static async fromServer(url, key, modelId, opts) {
       const [model, manifest] = await fetchOnnx(url, key, modelId);
@@ -429,7 +553,7 @@
 
     /**
      * Classifies one window.
-     * @param {number[][]} window - `windowSize` rows of values in `predictor.sensors` order
+     * @param {number[][]} window - `windowSize` rows of values in `predictor.sensors` order, in the declared units
      * @returns {Promise<import("../../index").OnnxPrediction>}
      */
     async predictWindow(window) {
@@ -437,7 +561,13 @@
       if (window.length !== this.windowSize || window.some((row) => row.length !== n)) {
         throw new TypeError(`Window must have shape [${this.windowSize}][${n}]`);
       }
-      const data = Float32Array.from(window.flat());
+      const data = new Float32Array(this.windowSize * n);
+      window.forEach((row, r) =>
+        row.forEach((value, c) => {
+          const conv = this._conversions[c];
+          data[r * n + c] = conv ? value * conv.scale + conv.offset : value;
+        })
+      );
       const input = new this.ort.Tensor("float32", data, [1, this.windowSize, n]);
       const outputs = await this.session.run({ [this.manifest.input.name]: input });
       const scores = Array.from(outputs[this.manifest.output.name].data);
@@ -459,7 +589,7 @@
    * @param {string} url - The url of the backend server
    * @param {string} key - A Device-Api-Key (read or write)
    * @param {string} modelId
-   * @param {{ ort?: any, sessionOptions?: object }} [opts]
+   * @param {import("../../index").LoadOptions} [opts]
    */
   function loadModel(url, key, modelId, opts) {
     return OnnxPredictor.fromServer(url, key, modelId, opts);
@@ -476,8 +606,10 @@
    * Uploads a whole dataset to a specific project
    * @param {string} url - The url of the backend server
    * @param {string} key - The Device-Api-Key (write access)
-   * @param {{ name: string, timeSeries: { name: string, data: [number, number][] }[], metaData?: { [key: string]: string }, labeling?: string }} dataset
-   *   time-series data as [unix ms, value] pairs; labeling as "{labeling}_{label}" for the whole dataset
+   * @param {import("../index").DatasetUpload} dataset
+   *   time-series data as [unix ms, value] pairs, each with an optional unit and quantity
+   *   (e.g. { name: "accX", unit: "g", quantity: "acceleration", data }); labeling as
+   *   "{labeling}_{label}" for the whole dataset
    * @returns {Promise<string>} The id of the created dataset
    */
   async function sendDataset(url, key, dataset) {
@@ -487,7 +619,7 @@
     const init = await http.post(url, URLS.initDatasetIncrement + key, {
       name: dataset.name,
       metaData: dataset.metaData || {},
-      timeSeries: dataset.timeSeries.map((ts) => ts.name),
+      timeSeries: dataset.timeSeries.map(initEntry),
     });
     if (!init || !init.id) {
       throw new Error("Could not create dataset");
@@ -508,7 +640,12 @@
    *
    * @param {string} url - The url of the backend server
    * @param {string} key - The Device-Api-Key
+   * @param {string} name - Name of the new dataset
    * @param {boolean} useDeviceTime - True if you want to use timestamps generated by the server
+   * @param {(string | { name: string, unit?: string, quantity?: string })[]} timeSeries - names, or
+   *   objects with the unit and quantity of the series, e.g. { name: "accX", unit: "g", quantity: "acceleration" }
+   * @param {{ [key: string]: string }} [metaData]
+   * @param {string} [datasetLabel] - label for the whole dataset as "{labeling}_{label}"
    * @returns Function to upload single datapoints to one dataset inside a specific project
    */
   async function datasetCollector(
@@ -525,10 +662,15 @@
       labeling = {"labelingName": datasetLabel.split("_")[0], "labelName": datasetLabel.split("_")[1]};
     }
 
+    if (!Array.isArray(timeSeries) || timeSeries.length === 0) {
+      throw new Error("timeSeries must be a non-empty array");
+    }
+    const seriesNames = timeSeries.map((ts) => seriesSpec(ts).name);
+
     const data = await http.post(url, URLS.initDatasetIncrement + key, {
       name: name,
-      metaData: metaData,
-      timeSeries: timeSeries,
+      metaData: metaData || {},
+      timeSeries: timeSeries.map(initEntry),
       labeling: labeling
     });
     if (!data || !data.id) {
@@ -540,7 +682,6 @@
     var dataStore = { data: [] };
     var lastChecked = Date.now();
     var error = undefined;
-    var timeSeries = timeSeries;
 
     /**
      * Uploads a vlaue for a specific timestamp to a datasets timeSeries with name sensorName
@@ -551,7 +692,7 @@
      */
     function addDataPoint(time, name, value) {
 
-      if (!timeSeries.includes(name)) {
+      if (!seriesNames.includes(name)) {
         throw Error("invalid time-series name")
       }
 
@@ -638,6 +779,9 @@
     // data collection
     datasetCollector: datasetCollector,
     sendDataset: sendDataset,
+    // units
+    fetchUnits: fetchUnits,
+    UnitError: UnitError,
     // training on the edge-ml server
     listPipelines: listPipelines,
     trainModel: trainModel,

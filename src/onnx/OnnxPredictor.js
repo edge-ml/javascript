@@ -1,6 +1,7 @@
 import { SampleBuffer } from "./SampleBuffer";
 import { loadRuntime, readFile, RUNTIME_HINT } from "./platform.node";
 import { fetchOnnx } from "../training";
+import { manifestUnits, resolveConversions } from "../units";
 
 let runtime = null;
 
@@ -31,8 +32,9 @@ export class OnnxPredictor {
    * @param {any} session - ort.InferenceSession
    * @param {any} manifest - manifest.json of the export
    * @param {any} ort - the onnxruntime module
+   * @param {{ units?: { [sensor: string]: string }, catalog?: object }} [unitOptions]
    */
-  constructor(session, manifest, ort) {
+  constructor(session, manifest, ort, { units, catalog } = {}) {
     if (!manifest || manifest.format !== "onnx") throw new Error("Not an edge-ml ONNX manifest");
     this.session = session;
     this.manifest = manifest;
@@ -44,6 +46,28 @@ export class OnnxPredictor {
     /** @type {number} */
     this.windowSize = manifest.window.size;
     this.buffer = new SampleBuffer(this.sensors, this.windowSize);
+    /**
+     * Unit the model expects for each input, with conversions from other units.
+     * Inputs of models trained before units existed have quantity null and unit "".
+     * @type {import("../../index").InputUnit[]}
+     */
+    this.inputUnits = manifestUnits(manifest);
+    this._conversions = this.sensors.map(() => null);
+    this._catalog = catalog;
+    if (units) this.setUnits(units);
+  }
+
+  /**
+   * Declares the unit each sensor delivers, e.g. `{ accX: "g" }`. Values are
+   * then converted to the unit the model expects before predicting. Sensors
+   * left out (and inputs of models without unit information) are passed through.
+   * Throws a UnitError if the model cannot convert from a declared unit.
+   * @param {{ [sensor: string]: string }} units
+   * @param {object} [catalog] - from `fetchUnits`, to also accept unit labels and aliases like "°C"
+   */
+  setUnits(units, catalog = this._catalog) {
+    this._conversions = resolveConversions(this.inputUnits, units || {}, catalog);
+    this._catalog = catalog;
   }
 
   /**
@@ -57,19 +81,21 @@ export class OnnxPredictor {
   /**
    * @param {ArrayBuffer | Uint8Array} model - bytes of model.onnx
    * @param {object} manifest - parsed manifest.json
-   * @param {{ ort?: any, sessionOptions?: object }} [opts]
+   * @param {{ ort?: any, sessionOptions?: object, units?: { [sensor: string]: string }, catalog?: object }} [opts]
    */
-  static async load(model, manifest, { ort, sessionOptions } = {}) {
+  static async load(model, manifest, { ort, sessionOptions, units, catalog } = {}) {
+    // check the units before creating the session, so a mistake fails fast
+    if (units) resolveConversions(manifestUnits(manifest), units, catalog);
     const rt = await getRuntime(ort);
     const session = await rt.InferenceSession.create(toBytes(model), sessionOptions);
-    return new OnnxPredictor(session, manifest, rt);
+    return new OnnxPredictor(session, manifest, rt, { units, catalog });
   }
 
   /**
    * Loads model.onnx and manifest.json from URLs (e.g. an unzipped download from edge-ml).
    * @param {string} modelUrl
    * @param {string} manifestUrl
-   * @param {{ ort?: any, sessionOptions?: object }} [opts]
+   * @param {import("../../index").LoadOptions} [opts]
    */
   static async fromUrls(modelUrl, manifestUrl, opts) {
     const [model, manifest] = await Promise.all([
@@ -83,7 +109,7 @@ export class OnnxPredictor {
    * Node.js only: loads model.onnx and manifest.json from disk.
    * @param {string} modelPath
    * @param {string} manifestPath
-   * @param {{ ort?: any, sessionOptions?: object }} [opts]
+   * @param {import("../../index").LoadOptions} [opts]
    */
   static async fromFiles(modelPath, manifestPath, opts) {
     const [model, manifest] = await Promise.all([readFile(modelPath), readFile(manifestPath)]);
@@ -95,7 +121,7 @@ export class OnnxPredictor {
    * @param {string} url - The url of the backend server
    * @param {string} key - A Device-Api-Key (read or write)
    * @param {string} modelId
-   * @param {{ ort?: any, sessionOptions?: object }} [opts]
+   * @param {import("../../index").LoadOptions} [opts]
    */
   static async fromServer(url, key, modelId, opts) {
     const [model, manifest] = await fetchOnnx(url, key, modelId);
@@ -136,7 +162,7 @@ export class OnnxPredictor {
 
   /**
    * Classifies one window.
-   * @param {number[][]} window - `windowSize` rows of values in `predictor.sensors` order
+   * @param {number[][]} window - `windowSize` rows of values in `predictor.sensors` order, in the declared units
    * @returns {Promise<import("../../index").OnnxPrediction>}
    */
   async predictWindow(window) {
@@ -144,7 +170,13 @@ export class OnnxPredictor {
     if (window.length !== this.windowSize || window.some((row) => row.length !== n)) {
       throw new TypeError(`Window must have shape [${this.windowSize}][${n}]`);
     }
-    const data = Float32Array.from(window.flat());
+    const data = new Float32Array(this.windowSize * n);
+    window.forEach((row, r) =>
+      row.forEach((value, c) => {
+        const conv = this._conversions[c];
+        data[r * n + c] = conv ? value * conv.scale + conv.offset : value;
+      })
+    );
     const input = new this.ort.Tensor("float32", data, [1, this.windowSize, n]);
     const outputs = await this.session.run({ [this.manifest.input.name]: input });
     const scores = Array.from(outputs[this.manifest.output.name].data);
@@ -166,7 +198,7 @@ export class OnnxPredictor {
  * @param {string} url - The url of the backend server
  * @param {string} key - A Device-Api-Key (read or write)
  * @param {string} modelId
- * @param {{ ort?: any, sessionOptions?: object }} [opts]
+ * @param {import("../../index").LoadOptions} [opts]
  */
 export function loadModel(url, key, modelId, opts) {
   return OnnxPredictor.fromServer(url, key, modelId, opts);

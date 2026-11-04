@@ -7,7 +7,7 @@ const edgeML = require("../dist/index");
 describe("Package exports", () => {
     it("exposes the documented API", () => {
         for (const name of [
-            "datasetCollector", "sendDataset",
+            "datasetCollector", "sendDataset", "fetchUnits", "UnitError",
             "listPipelines", "trainModel", "startTraining", "waitForModel", "getModel", "listModels",
             "loadModel", "OnnxPredictor", "PredictorError",
         ]) {

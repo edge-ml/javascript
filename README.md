@@ -84,6 +84,16 @@ await collector.onComplete();
 
 `addDataPoint` throws if a background upload failed. Values are rounded to two decimals.
 
+To store the unit of a time-series, pass an object instead of the name (see [Units](#units)):
+
+```js
+const collector = await edgeML.datasetCollector(url, key, "walk-1", true, [
+  { name: "accX", unit: "g", quantity: "acceleration" },
+  { name: "temp", unit: "degF", quantity: "temperature" },
+  "battery",                       // plain names still work: unit unknown
+]);
+```
+
 ### Upload a whole dataset
 
 ```js
@@ -91,6 +101,7 @@ const datasetId = await edgeML.sendDataset("backendUrl", "deviceApiKey", {
   name: "datasetName",
   timeSeries: [
     { name: "accX", data: [[1618760114000, 1.23], [1618760114020, 1.25]] }, // [unix ms, value]
+    { name: "accY", unit: "g", quantity: "acceleration", data: [[1618760114000, 0.98]] }, // with unit
   ],
   metaData: { key: "value" },  // optional
   labeling: "labeling_label",   // optional
@@ -163,6 +174,27 @@ await predictor.predictWindow(rows);            // classify your own window: win
 predictor.reset();                              // clear the buffer
 ```
 
+### Sensor units
+
+Every model knows the unit it expects for each input (`predictor.inputUnits`). Tell the predictor which unit your sensors deliver, and it converts the values before predicting:
+
+```js
+const predictor = await edgeML.loadModel(url, key, modelId, {
+  units: { accX: "g", accY: "g", accZ: "g", temp: "degF" },
+});
+predictor.addSample({ accX: 0.02, accY: 1.0, accZ: 0.01, temp: 71.6 }); // in g and °F
+
+predictor.inputUnits;
+// [{ name: "accX", quantity: "acceleration", unit: "m/s^2", conversions: { "g": { scale: 9.80665, offset: 0 }, ... } }, ...]
+
+predictor.setUnits({ accX: "m/s^2" }); // change the declaration later
+```
+
+- Sensors you don't declare are passed through unchanged, as are all inputs of models trained before units existed (or on data of unknown unit).
+- If the model can't convert from a declared unit (e.g. `"degC"` for an acceleration), `loadModel`/`setUnits` throw a `UnitError` that lists the units it accepts, instead of predicting on wrong values.
+- Units are matched by catalog id (`"m/s^2"`, `"degF"`, ...). Pass the catalog to also accept labels and aliases like `"m/s²"` or `"°F"`: `{ units, catalog: await edgeML.fetchUnits(url) }`.
+- `predictWindow` takes values in the declared units too.
+
 ### Choosing the ONNX runtime
 
 - **Node.js**: `onnxruntime-node` is loaded automatically, with `onnxruntime-web` as a fallback.
@@ -177,6 +209,22 @@ OnnxPredictor.setRuntime(ort); // or per model: loadModel(url, key, id, { ort })
 
 `sessionOptions` (e.g. `{ executionProviders: ["webgpu", "wasm"] }`) can be passed the same way and are forwarded to `ort.InferenceSession.create`.
 
+
+## Units
+
+edge-ml stores a quantity and a unit for each time-series. `quantity` is an id of the server's unit catalog (e.g. `acceleration`, `angular_velocity`, `temperature`) or a name of your own, and `unit` is one of its units (e.g. `g`, `rad/s`, `degF`). When a model is trained, series of catalog quantities are converted to the quantity's default unit (e.g. m/s² for acceleration), so datasets recorded in different units can be trained on together. Series without a quantity are trained on as they are.
+
+```js
+const catalog = await edgeML.fetchUnits("https://app.edge-ml.org"); // no key needed
+catalog.quantities.map((q) => [q.id, q.defaultUnit, q.units.map((u) => u.id)]);
+// [["acceleration", "m/s^2", ["m/s^2", "g", "mg", "cm/s^2"]], ["angular_velocity", "deg/s", ["deg/s", "rad/s", "rpm"]], ...]
+```
+
+## Unreleased: units
+
+- Time-series can carry a unit and quantity when uploading (`{ name, unit, quantity }` instead of a name).
+- `OnnxPredictor` converts declared sensor units to the units the model expects (`units` option, `setUnits`, `inputUnits`), and throws a `UnitError` for units it can't convert.
+- `fetchUnits(url)` returns the server's unit catalog.
 
 ## Changes from 4.x
 
