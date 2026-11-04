@@ -14,3 +14,9 @@ The JS tests check that `OnnxPredictor` reproduces both.
 
 To regenerate them, run the backend's ONNX exporter on the same pipelines and
 write `model.onnx`, `manifest.json` and `reference.json` per model.
+
+The manifests above predate units, so they also cover old models. For the unit
+tests, `input_units.json` is the `input.units` block the backend
+(`ml/app/units/deploy.py`) writes for a model trained on x in m/s^2
+(acceleration), y in degC (temperature) and z in a custom unit, and
+`unit_catalog.json` is the backend's `GET /ml/units/` response.

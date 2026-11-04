@@ -17,22 +17,36 @@ export interface DatasetCollectorOwnTime {
 }
 
 /**
+ * Unit of a time-series. `quantity` is a quantity id of the unit catalog
+ * (see `fetchUnits`), e.g. "acceleration", or a label of your own; `unit` is
+ * a unit id of that quantity, e.g. "g". Training converts series of catalog
+ * quantities to the quantity's default unit.
+ */
+export interface SeriesUnit {
+    unit?: string;
+    quantity?: string;
+}
+
+/** A time-series name, or a name with its unit, e.g. `{ name: "accX", unit: "g", quantity: "acceleration" }`. */
+export type TimeSeriesSpec = string | ({ name: string } & SeriesUnit);
+
+/**
  * Creates a dataset and returns a collector that uploads datapoints incrementally.
  * @param datasetLabel label for the whole dataset as "{labeling}_{label}"
  */
 export function datasetCollector(
-    url: string, key: string, name: string, useDeviceTime: true, timeSeries: string[],
+    url: string, key: string, name: string, useDeviceTime: true, timeSeries: TimeSeriesSpec[],
     metaData?: Record<string, string>, datasetLabel?: string
 ): Promise<DatasetCollectorServerTime>;
 export function datasetCollector(
-    url: string, key: string, name: string, useDeviceTime: false, timeSeries: string[],
+    url: string, key: string, name: string, useDeviceTime: false, timeSeries: TimeSeriesSpec[],
     metaData?: Record<string, string>, datasetLabel?: string
 ): Promise<DatasetCollectorOwnTime>;
 
 export interface DatasetUpload {
     name: string;
-    /** data as [unix ms, value] pairs */
-    timeSeries: { name: string; data: [number, number][] }[];
+    /** data as [unix ms, value] pairs, optionally with the unit of the series */
+    timeSeries: ({ name: string; data: [number, number][] } & SeriesUnit)[];
     metaData?: Record<string, string>;
     /** label for the whole dataset as "{labeling}_{label}" */
     labeling?: string;
@@ -40,6 +54,47 @@ export interface DatasetUpload {
 
 /** Uploads a whole dataset. Resolves to the id of the new dataset. */
 export function sendDataset(url: string, key: string, dataset: DatasetUpload): Promise<string>;
+
+// ---------------------------------------------------------------- units
+
+export interface CatalogUnit {
+    id: string;
+    label: string;
+    /** affine map to the quantity's base unit: base = value * scale + offset */
+    scale: number;
+    offset: number;
+    aliases: string[];
+}
+
+export interface CatalogQuantity {
+    id: string;
+    label: string;
+    /** the unit training converts to, and models expect */
+    defaultUnit: string;
+    units: CatalogUnit[];
+}
+
+export interface UnitCatalog {
+    version: number;
+    quantities: CatalogQuantity[];
+}
+
+/** The unit a model input expects, and how to convert other units to it. */
+export interface InputUnit {
+    name: string;
+    /** catalog quantity id or custom label; null when unknown (e.g. models trained before units existed) */
+    quantity: string | null;
+    /** expected unit; "" when unknown */
+    unit: string;
+    /** per catalog unit id: expected = value * scale + offset */
+    conversions: Record<string, { scale: number; offset: number }>;
+}
+
+/** The unit catalog of the server: quantities, their units and default units. No API key needed. */
+export function fetchUnits(url: string): Promise<UnitCatalog>;
+
+/** A declared sensor unit that the model cannot convert from. */
+export class UnitError extends Error {}
 
 // ---------------------------------------------------------------- training
 
@@ -90,6 +145,8 @@ export interface ModelInfo {
     formats: string[];
     labels: string[];
     timeSeries: string[];
+    /** the unit each input expects (quantity null and unit "" for models trained before units existed) */
+    inputUnits?: InputUnit[];
     samplingRate: number | null;
     metrics: Record<string, unknown> | null;
 }
@@ -132,6 +189,13 @@ export interface LoadOptions {
     ort?: any;
     /** passed to ort.InferenceSession.create */
     sessionOptions?: Record<string, unknown>;
+    /**
+     * Unit each sensor delivers, e.g. `{ accX: "g" }`: values are converted to
+     * the unit the model expects. Throws a UnitError if the model cannot convert.
+     */
+    units?: Record<string, string>;
+    /** unit catalog (`fetchUnits`), to also accept unit labels and aliases such as "°C" in `units` */
+    catalog?: UnitCatalog;
 }
 
 export class PredictorError extends Error {}
@@ -145,6 +209,8 @@ export class OnnxPredictor {
     /** samples per window */
     readonly windowSize: number;
     readonly manifest: any;
+    /** unit each input expects, from the manifest */
+    readonly inputUnits: InputUnit[];
 
     /** Sets the onnxruntime module (needed with bundlers in the browser). */
     static setRuntime(ort: any): void;
@@ -159,9 +225,14 @@ export class OnnxPredictor {
     /** One value per sensor with a shared timestamp. */
     addSample(values: number[] | Record<string, number>, time?: number): void;
     reset(): void;
+    /**
+     * Declares the unit each sensor delivers (replacing earlier declarations).
+     * Throws a UnitError if the model cannot convert from a declared unit.
+     */
+    setUnits(units: Record<string, string>, catalog?: UnitCatalog): void;
     /** Classifies the latest window; throws PredictorError until enough samples are buffered. */
     predict(): Promise<OnnxPrediction>;
-    /** Classifies one window of `windowSize` rows in `sensors` order. */
+    /** Classifies one window of `windowSize` rows in `sensors` order (in the declared units). */
     predictWindow(window: number[][]): Promise<OnnxPrediction>;
 }
 
@@ -172,6 +243,8 @@ export function loadModel(url: string, key: string, modelId: string, opts?: Load
 declare const edgeML: {
     datasetCollector: typeof datasetCollector;
     sendDataset: typeof sendDataset;
+    fetchUnits: typeof fetchUnits;
+    UnitError: typeof UnitError;
     listPipelines: typeof listPipelines;
     trainModel: typeof trainModel;
     startTraining: typeof startTraining;
