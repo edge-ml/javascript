@@ -1,6 +1,6 @@
 {
     "name": "edge-ml",
-    "version": "4.0.1",
+    "version": "4.1.0",
     "description": "JavaScript library for edge-ml (https://github.com/edge-ml): collect data, train models and run them in the browser or Node.js",
     "main": "dist/index.js",
     "module": "dist/index.mjs",

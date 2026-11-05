@@ -220,7 +220,7 @@ catalog.quantities.map((q) => [q.id, q.defaultUnit, q.units.map((u) => u.id)]);
 // [["acceleration", "m/s^2", ["m/s^2", "g", "mg", "cm/s^2"]], ["angular_velocity", "deg/s", ["deg/s", "rad/s", "rpm"]], ...]
 ```
 
-## Unreleased: units
+## 4.1.0: units
 
 - Time-series can carry a unit and quantity when uploading (`{ name, unit, quantity }` instead of a name).
 - `OnnxPredictor` converts declared sensor units to the units the model expects (`units` option, `setUnits`, `inputUnits`), and throws a `UnitError` for units it can't convert.
