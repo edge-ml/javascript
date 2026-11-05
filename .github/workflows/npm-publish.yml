@@ -48,14 +48,16 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.check.outputs.changed == 'true'
         with:
-          node-version: 24
-      # trusted publishing needs npm >= 11.5.1
-      - run: npm install -g npm@^11.5.1 && npm --version
-        if: steps.check.outputs.changed == 'true'
+          node-version: 20
+      # install with the npm that wrote package-lock.json (npm 11's `npm ci`
+      # rejects this lockfile's missing optional platform packages)
       - run: npm ci
         if: steps.check.outputs.changed == 'true'
         env:
           ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      # trusted publishing needs npm >= 11.5.1
+      - run: npm install -g npm@^11.5.1 && npm --version
+        if: steps.check.outputs.changed == 'true'
       - run: npm publish
         if: steps.check.outputs.changed == 'true'
       - name: Version unchanged
