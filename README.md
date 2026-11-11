@@ -251,7 +251,7 @@ catalog.quantities.map((q) => [q.id, q.defaultUnit, q.units.map((u) => u.id)]);
 // [["acceleration", "m/s^2", ["m/s^2", "g", "mg", "cm/s^2"]], ["angular_velocity", "deg/s", ["deg/s", "rad/s", "rpm"]], ...]
 ```
 
-## Unreleased: audio and video
+## 4.2.0: audio and video
 
 - `uploadMedia` adds an audio or video recording to a dataset; `sendDataset` takes them as `media`, also without any time-series.
 - `listDatasets` lists the project's datasets with their time-series and recordings; `downloadMedia` fetches a recording.
