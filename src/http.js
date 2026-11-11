@@ -6,13 +6,14 @@
 
 const joinUrl = (base, path) => base.replace(/\/+$/, "") + path;
 
-async function request(method, base, path, body, { responseType = "json" } = {}) {
+async function request(method, base, path, body, { responseType = "json", form = false } = {}) {
   let res;
   try {
     res = await fetch(joinUrl(base, path), {
       method,
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // a form is sent as multipart; fetch adds the header with its boundary
+      headers: body !== undefined && !form ? { "Content-Type": "application/json" } : undefined,
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
     });
   } catch (e) {
     throw new Error("Server error: " + (e && e.message ? e.message : e));
@@ -37,4 +38,5 @@ async function request(method, base, path, body, { responseType = "json" } = {})
 export const http = {
   get: (base, path, opts) => request("GET", base, path, undefined, opts),
   post: (base, path, body, opts) => request("POST", base, path, body, opts),
+  postForm: (base, path, form, opts) => request("POST", base, path, form, { ...opts, form: true }),
 };

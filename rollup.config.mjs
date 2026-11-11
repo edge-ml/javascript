@@ -9,7 +9,7 @@ const nodeExternal = ['onnxruntime-node', 'onnxruntime-web', 'fs'];
 
 // no Node-only code (onnxruntime-node, fs) in browser builds
 const browserPlugins = () => [
-    alias({ entries: [{ find: /^\.\/platform\.node$/, replacement: src('onnx/platform.browser.js') }] }),
+    alias({ entries: [{ find: /^\.\/(onnx\/)?platform\.node$/, replacement: src('onnx/platform.browser.js') }] }),
 ];
 
 // index.js has named exports plus a default export (ES modules);

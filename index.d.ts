@@ -50,10 +50,89 @@ export interface DatasetUpload {
     metaData?: Record<string, string>;
     /** label for the whole dataset as "{labeling}_{label}" */
     labeling?: string;
+    /** audio and video recordings to add to the dataset */
+    media?: ({ file: MediaFile } & MediaOptions)[];
 }
 
+/** A dataset that only holds recordings: `timeSeries` can be left out. */
+export type MediaDatasetUpload = Omit<DatasetUpload, "timeSeries" | "media"> & {
+    timeSeries?: DatasetUpload["timeSeries"];
+    media: ({ file: MediaFile } & MediaOptions)[];
+};
+
 /** Uploads a whole dataset. Resolves to the id of the new dataset. */
-export function sendDataset(url: string, key: string, dataset: DatasetUpload): Promise<string>;
+export function sendDataset(url: string, key: string, dataset: DatasetUpload | MediaDatasetUpload): Promise<string>;
+
+// ---------------------------------------------------------------- audio and video
+
+/** A File or Blob (browser), a Buffer or ArrayBuffer, or a file path (Node.js). */
+export type MediaFile = Blob | ArrayBuffer | ArrayBufferView | string;
+
+export interface MediaOptions {
+    /** checked against the file; detected from it when omitted */
+    kind?: "audio" | "video";
+    /** name of the recording; defaults to the file name */
+    name?: string;
+    /**
+     * unix ms at which the recording begins on the dataset timeline; defaults
+     * to the start of the dataset (or now, for a dataset without data)
+     */
+    start?: number;
+    /** file name to send for a Buffer/ArrayBuffer, which has none */
+    fileName?: string;
+}
+
+/** An audio or video recording of a dataset. */
+export interface MediaSeries {
+    _id: string;
+    kind: "audio" | "video";
+    name: string;
+    /** unix ms at which the recording begins on the dataset timeline */
+    start: number;
+    /** start + durationMs */
+    end: number;
+    durationMs: number;
+    mimeType: string;
+    /** bytes */
+    size: number;
+    /** "processing" while the waveform shown in the web app is computed */
+    status: "processing" | "ready";
+    hasPeaks: boolean;
+    meta: {
+        container?: string;
+        videoCodec?: string | null;
+        audioCodec?: string | null;
+        width?: number;
+        height?: number;
+        fps?: number;
+        sampleRate?: number;
+        channels?: number;
+    };
+}
+
+/**
+ * Adds an audio or video recording to a dataset (write key). The server
+ * accepts what browsers can play: MP4 (H.264/AAC) and WebM video; MP3, WAV,
+ * OGG, FLAC and M4A audio.
+ */
+export function uploadMedia(
+    url: string, key: string, datasetId: string, file: MediaFile, options?: MediaOptions
+): Promise<MediaSeries>;
+
+/** Downloads a recording as it was uploaded. */
+export function downloadMedia(url: string, key: string, datasetId: string, mediaId: string): Promise<ArrayBuffer>;
+
+export interface DatasetInfo {
+    _id: string;
+    name: string;
+    metaData: Record<string, string>;
+    timeSeries: ({ _id: string; name: string; start: number | null; end: number | null; length?: number | null } & SeriesUnit)[];
+    mediaSeries: MediaSeries[];
+    labelings: { labelingId: string; labels: { _id: string; start: number; end: number; type: string }[] }[];
+}
+
+/** Lists the datasets of the project with their time-series and recordings (no sample values). */
+export function listDatasets(url: string, key: string): Promise<DatasetInfo[]>;
 
 // ---------------------------------------------------------------- units
 
@@ -243,6 +322,9 @@ export function loadModel(url: string, key: string, modelId: string, opts?: Load
 declare const edgeML: {
     datasetCollector: typeof datasetCollector;
     sendDataset: typeof sendDataset;
+    listDatasets: typeof listDatasets;
+    uploadMedia: typeof uploadMedia;
+    downloadMedia: typeof downloadMedia;
     fetchUnits: typeof fetchUnits;
     UnitError: typeof UnitError;
     listPipelines: typeof listPipelines;

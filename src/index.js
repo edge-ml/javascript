@@ -2,6 +2,7 @@ import { http } from "./http";
 import { PredictorError } from "./errors";
 import { OnnxPredictor, loadModel } from "./onnx/OnnxPredictor";
 import { UnitError, fetchUnits, initEntry, seriesSpec } from "./units";
+import { uploadMedia, downloadMedia, listDatasets } from "./media";
 import { listPipelines, startTraining, trainModel, waitForModel, getModel, listModels } from "./training";
 
 const UPLOAD_INTERVAL = 5 * 1000;
@@ -18,17 +19,24 @@ const URLS = {
  * @param {import("../index").DatasetUpload} dataset
  *   time-series data as [unix ms, value] pairs, each with an optional unit and quantity
  *   (e.g. { name: "accX", unit: "g", quantity: "acceleration", data }); labeling as
- *   "{labeling}_{label}" for the whole dataset
+ *   "{labeling}_{label}" for the whole dataset; `media` with audio/video recordings
+ *   (e.g. { file, start }), in which case timeSeries may be empty
  * @returns {Promise<string>} The id of the created dataset
  */
 async function sendDataset(url, key, dataset) {
-  if (!dataset || !dataset.name || !Array.isArray(dataset.timeSeries)) {
+  const media = dataset && dataset.media !== undefined ? dataset.media : [];
+  if (!Array.isArray(media) || media.some((m) => !m || m.file === undefined)) {
+    throw new Error("media must be an array of { file, kind?, name?, start? }");
+  }
+  // a dataset that only holds recordings needs no timeSeries
+  const series = dataset && dataset.timeSeries === undefined && media.length > 0 ? [] : dataset && dataset.timeSeries;
+  if (!dataset || !dataset.name || !Array.isArray(series)) {
     throw new Error("dataset needs a name and a timeSeries array");
   }
   const init = await http.post(url, URLS.initDatasetIncrement + key, {
     name: dataset.name,
     metaData: dataset.metaData || {},
-    timeSeries: dataset.timeSeries.map(initEntry),
+    timeSeries: series.map(initEntry),
   });
   if (!init || !init.id) {
     throw new Error("Could not create dataset");
@@ -38,10 +46,17 @@ async function sendDataset(url, key, dataset) {
     const [labelingName, labelName] = dataset.labeling.split("_");
     labeling = { labelingName, labelName };
   }
-  await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
-    data: dataset.timeSeries.map((ts) => ({ name: ts.name, data: ts.data })),
-    labeling: labeling,
-  });
+  // a label for the whole dataset spans its time-series, so there is nothing
+  // to send for a dataset without any
+  if (series.length > 0) {
+    await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
+      data: series.map((ts) => ({ name: ts.name, data: ts.data })),
+      labeling: labeling,
+    });
+  }
+  for (const { file, ...options } of media) {
+    await uploadMedia(url, key, init.id, file, options);
+  }
   return init.id;
 }
 
@@ -188,6 +203,10 @@ const edgeML = {
   // data collection
   datasetCollector: datasetCollector,
   sendDataset: sendDataset,
+  listDatasets: listDatasets,
+  // audio and video
+  uploadMedia: uploadMedia,
+  downloadMedia: downloadMedia,
   // units
   fetchUnits: fetchUnits,
   UnitError: UnitError,
@@ -208,6 +227,9 @@ export default edgeML;
 export {
   datasetCollector,
   sendDataset,
+  listDatasets,
+  uploadMedia,
+  downloadMedia,
   fetchUnits,
   UnitError,
   listPipelines,

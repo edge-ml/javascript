@@ -108,6 +108,37 @@ const datasetId = await edgeML.sendDataset("backendUrl", "deviceApiKey", {
 });
 ```
 
+### Audio and video
+
+A dataset can hold audio and video recordings next to its time-series, to view and label them in the web app. A recording is placed on the dataset's timeline by `start`, the unix ms at which it begins, so it lines up with the sensor data. Recordings are not used for training.
+
+```js
+// add a recording to an existing dataset
+const media = await edgeML.uploadMedia("backendUrl", "deviceApiKey", datasetId, file, {
+  start: 1618760114000, // optional: defaults to the start of the dataset
+  name: "front camera", // optional: defaults to the file name
+  kind: "video",        // optional: "audio" | "video", detected from the file
+});
+// media: { _id, kind, name, start, end, durationMs, mimeType, size, meta: { width, height, fps, ... } }
+```
+
+`file` is a `File` or `Blob` in the browser (from an `<input type="file">` or a `MediaRecorder`), and a `Buffer`, `ArrayBuffer` or file path in Node.js. Pass `fileName` for a Buffer if you want the recording named after it.
+
+```js
+// or with the dataset; a dataset with only recordings needs no timeSeries
+const datasetId = await edgeML.sendDataset("backendUrl", "deviceApiKey", {
+  name: "walk-1",
+  timeSeries: [{ name: "accX", data: [[1618760114000, 1.23]] }],
+  media: [{ file: "./walk-1.mp4", start: 1618760114000 }],
+});
+
+// list datasets with their time-series and recordings (read key), and download one
+const datasets = await edgeML.listDatasets("backendUrl", "readKey");
+const bytes = await edgeML.downloadMedia("backendUrl", "readKey", datasetId, datasets[0].mediaSeries[0]._id);
+```
+
+The server stores the file as it is and accepts what browsers can play: MP4 (H.264 with AAC) and WebM video; MP3, WAV, OGG, FLAC and M4A audio, up to 2 GB. Anything else is refused with a `400` that says why.
+
 ## Train models
 
 ```js
@@ -219,6 +250,12 @@ const catalog = await edgeML.fetchUnits("https://app.edge-ml.org"); // no key ne
 catalog.quantities.map((q) => [q.id, q.defaultUnit, q.units.map((u) => u.id)]);
 // [["acceleration", "m/s^2", ["m/s^2", "g", "mg", "cm/s^2"]], ["angular_velocity", "deg/s", ["deg/s", "rad/s", "rpm"]], ...]
 ```
+
+## Unreleased: audio and video
+
+- `uploadMedia` adds an audio or video recording to a dataset; `sendDataset` takes them as `media`, also without any time-series.
+- `listDatasets` lists the project's datasets with their time-series and recordings; `downloadMedia` fetches a recording.
+- These need an edge-ml server with media support.
 
 ## 4.1.0: units
 
