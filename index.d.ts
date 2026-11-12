@@ -43,13 +43,23 @@ export function datasetCollector(
     metaData?: Record<string, string>, datasetLabel?: string
 ): Promise<DatasetCollectorOwnTime>;
 
+/** A label over a time range (unix ms, both ends inclusive), e.g. "walk" of the labeling "activity". */
+export interface DatasetLabel {
+    labeling: string;
+    label: string;
+    start: number;
+    end: number;
+}
+
 export interface DatasetUpload {
     name: string;
     /** data as [unix ms, value] pairs, optionally with the unit of the series */
     timeSeries: ({ name: string; data: [number, number][] } & SeriesUnit)[];
     metaData?: Record<string, string>;
-    /** label for the whole dataset as "{labeling}_{label}" */
+    /** label for the whole dataset (its time-series and recordings) as "{labeling}_{label}" */
     labeling?: string;
+    /** labels over time ranges */
+    labels?: DatasetLabel[];
     /** audio and video recordings to add to the dataset */
     media?: ({ file: MediaFile } & MediaOptions)[];
 }
@@ -62,6 +72,12 @@ export type MediaDatasetUpload = Omit<DatasetUpload, "timeSeries" | "media"> & {
 
 /** Uploads a whole dataset. Resolves to the id of the new dataset. */
 export function sendDataset(url: string, key: string, dataset: DatasetUpload | MediaDatasetUpload): Promise<string>;
+
+/**
+ * Adds labels over time ranges to a dataset, e.g. to one that holds
+ * recordings. Labelings and labels that do not exist yet are created.
+ */
+export function addLabels(url: string, key: string, datasetId: string, labels: DatasetLabel[]): Promise<void>;
 
 // ---------------------------------------------------------------- audio and video
 
@@ -322,6 +338,7 @@ export function loadModel(url: string, key: string, modelId: string, opts?: Load
 declare const edgeML: {
     datasetCollector: typeof datasetCollector;
     sendDataset: typeof sendDataset;
+    addLabels: typeof addLabels;
     listDatasets: typeof listDatasets;
     uploadMedia: typeof uploadMedia;
     downloadMedia: typeof downloadMedia;

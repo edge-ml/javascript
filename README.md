@@ -104,9 +104,19 @@ const datasetId = await edgeML.sendDataset("backendUrl", "deviceApiKey", {
     { name: "accY", unit: "g", quantity: "acceleration", data: [[1618760114000, 0.98]] }, // with unit
   ],
   metaData: { key: "value" },  // optional
-  labeling: "labeling_label",   // optional
+  labeling: "labeling_label",   // optional: one label for the whole dataset
+  labels: [                     // optional: labels over time ranges (unix ms)
+    { labeling: "activity", label: "walk", start: 1618760114000, end: 1618760124000 },
+  ],
 });
+
+// label a dataset later, e.g. one that holds recordings
+await edgeML.addLabels("backendUrl", "deviceApiKey", datasetId, [
+  { labeling: "activity", label: "run", start: 1618760125000, end: 1618760130000 },
+]);
 ```
+
+Labelings and labels that do not exist yet are created. Labels of one labeling must not overlap.
 
 ### Audio and video
 
@@ -250,6 +260,11 @@ const catalog = await edgeML.fetchUnits("https://app.edge-ml.org"); // no key ne
 catalog.quantities.map((q) => [q.id, q.defaultUnit, q.units.map((u) => u.id)]);
 // [["acceleration", "m/s^2", ["m/s^2", "g", "mg", "cm/s^2"]], ["angular_velocity", "deg/s", ["deg/s", "rad/s", "rpm"]], ...]
 ```
+
+## 4.3.0: labels over time ranges
+
+- `sendDataset` takes `labels: [{ labeling, label, start, end }]`, and `addLabels` adds them to an existing dataset.
+- A `labeling` for the whole dataset is no longer dropped for a dataset that only holds recordings, and covers the recordings of a dataset that also has time-series. This needs an edge-ml server that spans recordings; older servers refuse it for a dataset without time-series.
 
 ## 4.2.0: audio and video
 

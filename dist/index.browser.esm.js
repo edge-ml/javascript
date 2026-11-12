@@ -703,8 +703,9 @@ const URLS = {
  * @param {import("../index").DatasetUpload} dataset
  *   time-series data as [unix ms, value] pairs, each with an optional unit and quantity
  *   (e.g. { name: "accX", unit: "g", quantity: "acceleration", data }); labeling as
- *   "{labeling}_{label}" for the whole dataset; `media` with audio/video recordings
- *   (e.g. { file, start }), in which case timeSeries may be empty
+ *   "{labeling}_{label}" for the whole dataset; `labels` over time ranges
+ *   (e.g. { labeling: "activity", label: "walk", start, end }); `media` with audio/video
+ *   recordings (e.g. { file, start }), in which case timeSeries may be empty
  * @returns {Promise<string>} The id of the created dataset
  */
 async function sendDataset(url, key, dataset) {
@@ -717,6 +718,7 @@ async function sendDataset(url, key, dataset) {
   if (!dataset || !dataset.name || !Array.isArray(series)) {
     throw new Error("dataset needs a name and a timeSeries array");
   }
+  const labels = labelEntries(dataset.labels);
   const init = await http.post(url, URLS.initDatasetIncrement + key, {
     name: dataset.name,
     metaData: dataset.metaData || {},
@@ -730,18 +732,68 @@ async function sendDataset(url, key, dataset) {
     const [labelingName, labelName] = dataset.labeling.split("_");
     labeling = { labelingName, labelName };
   }
-  // a label for the whole dataset spans its time-series, so there is nothing
-  // to send for a dataset without any
+  // A label for the whole dataset spans what the dataset holds when it is
+  // sent, so with recordings the labels go last, once those are there.
+  const labelsLast = media.length > 0;
   if (series.length > 0) {
     await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
       data: series.map((ts) => ({ name: ts.name, data: ts.data })),
-      labeling: labeling,
+      labeling: labelsLast ? undefined : labeling,
+      // left out when there are none, as before
+      labels: labelsLast || labels.length === 0 ? undefined : labels,
     });
   }
   for (const { file, ...options } of media) {
     await uploadMedia(url, key, init.id, file, options);
   }
+  if (labelsLast && (labeling || labels.length > 0)) {
+    await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
+      data: [],
+      labeling,
+      labels: labels.length > 0 ? labels : undefined,
+    });
+  }
   return init.id;
+}
+
+/** Checks labels over time ranges and turns them into what the server takes. */
+function labelEntries(labels) {
+  if (labels === undefined) return [];
+  if (!Array.isArray(labels)) {
+    throw new Error("labels must be an array of { labeling, label, start, end }");
+  }
+  return labels.map((entry) => {
+    const { labeling, label, start, end } = entry || {};
+    if (typeof labeling !== "string" || !labeling || typeof label !== "string" || !label) {
+      throw new Error("a label needs a labeling and a label, e.g. { labeling: 'activity', label: 'walk', start, end }");
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      throw new Error(`label '${label}' needs start and end as unix timestamps in milliseconds`);
+    }
+    if (end < start) {
+      throw new Error(`label '${label}' ends before it starts`);
+    }
+    return { labelingName: labeling, labelName: label, start: Math.round(start), end: Math.round(end) };
+  });
+}
+
+/**
+ * Adds labels over time ranges to a dataset, e.g. to one that holds recordings.
+ * Labelings and labels that do not exist yet are created.
+ * @param {string} url - The url of the backend server
+ * @param {string} key - The Device-Api-Key (write access)
+ * @param {string} datasetId - id of the dataset, e.g. from sendDataset
+ * @param {import("../index").DatasetLabel[]} labels - e.g.
+ *   [{ labeling: "activity", label: "walk", start: 1618760114000, end: 1618760124000 }]
+ * @returns {Promise<void>}
+ */
+async function addLabels(url, key, datasetId, labels) {
+  if (!datasetId) {
+    throw new Error("addLabels needs the id of a dataset");
+  }
+  const entries = labelEntries(labels === undefined ? null : labels);
+  if (entries.length === 0) return;
+  await http.post(url, URLS.addDatasetIncrement + key + "/" + datasetId, { data: [], labels: entries });
 }
 
 /**
@@ -887,6 +939,7 @@ const edgeML = {
   // data collection
   datasetCollector: datasetCollector,
   sendDataset: sendDataset,
+  addLabels: addLabels,
   listDatasets: listDatasets,
   // audio and video
   uploadMedia: uploadMedia,
@@ -907,4 +960,4 @@ const edgeML = {
   PredictorError: PredictorError,
 };
 
-export { OnnxPredictor, PredictorError, UnitError, datasetCollector, edgeML as default, downloadMedia, fetchUnits, getModel, listDatasets, listModels, listPipelines, loadModel, sendDataset, startTraining, trainModel, uploadMedia, waitForModel };
+export { OnnxPredictor, PredictorError, UnitError, addLabels, datasetCollector, edgeML as default, downloadMedia, fetchUnits, getModel, listDatasets, listModels, listPipelines, loadModel, sendDataset, startTraining, trainModel, uploadMedia, waitForModel };
