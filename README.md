@@ -179,6 +179,25 @@ Leaving out `pipeline` uses the defaults above. `listPipelines(url, key)` return
 
 To run in the browser, a model has to be exportable to ONNX. It needs **sample-based windowing**, the **SimpleFeatureExtractor** or **Raw Time-Series** features, a **MinMax** or **Z** normalizer, and a **Decision Tree**, **Random Forest** or **PyTorch** classifier.
 
+### Train on sound
+
+Datasets can hold audio and video recordings (see [Audio and video](#audio-and-video)). Models can learn from a recording's sound, alone or together with the sensors:
+
+```js
+// sound only: windows of 1 s, the sound as a log-mel spectrogram, a CNN
+await edgeML.trainModel(url, key, { name: "kitchen", labeling: "activity", preset: "audio_cnn" });
+
+// sound and the time-series all datasets share
+await edgeML.trainModel(url, key, { name: "kitchen", labeling: "activity", preset: "mixed_cnn" });
+
+// name the recording when the datasets have more than one, and pick sensors
+await edgeML.trainModel(url, key, { name: "kitchen", labeling: "activity", audio: "mic", timeSeries: ["accX", "accY", "accZ"] });
+```
+
+- `audio` names the recording (by its name in the datasets). Without it, the recording every selected dataset has is used when there is exactly one. Video files count when they have a sound track.
+- Without `datasets`, every dataset labeled with `labeling` that has the recording is used.
+- Sound is converted to mono at 16 kHz. Sound models can be exported to ONNX (browser, Node.js), ExecuTorch (phones) and PyTorch, not to C.
+
 Other functions:
 
 | Function | |
@@ -214,6 +233,30 @@ const result = await predictor.predict();       // throws PredictorError until a
 await predictor.predictWindow(rows);            // classify your own window: windowSize rows of sensor values
 predictor.reset();                              // clear the buffer
 ```
+
+### Models that take sound
+
+Models trained on sound take it with `addAudio`, at any sample rate (it is mixed to mono and resampled to the model's rate, e.g. 16 kHz). Sensors go in as before. Their windows have a fixed duration (`windowMs`); `predict()` classifies the latest window of sound and sensors, aligned in time.
+
+```js
+const predictor = await edgeML.loadModel(url, key, modelId);
+predictor.audioSampleRate; // 16000: rate the model takes (null for sensor models)
+predictor.windowMs;        // 1000: window duration
+
+// e.g. from the Web Audio API (an AudioWorklet posting Float32Array chunks)
+predictor.addAudio(chunk, { sampleRate: audioContext.sampleRate }); // optional: channels, time (unix ms of the last sample)
+predictor.addPcm16(int16Chunk, { sampleRate: 48000 });              // 16-bit PCM
+predictor.addSample({ accX, accY, accZ });                          // mixed models: sensors too
+
+if (predictor.isReady) console.log((await predictor.predict()).prediction);
+
+// classify your own window: sensor rows on the model's grid, sound at audioSampleRate
+await predictor.predictInputs({ sensors: rows, audio: float32Samples });
+```
+
+`examples/example-audio-web` classifies the microphone live in the browser.
+
+`edgeML.Resampler` is the resampler the predictor uses, if you need it yourself: `new Resampler(48000, 16000).process(chunk)` returns the converted samples of each chunk.
 
 ### Sensor units
 
@@ -260,6 +303,13 @@ const catalog = await edgeML.fetchUnits("https://app.edge-ml.org"); // no key ne
 catalog.quantities.map((q) => [q.id, q.defaultUnit, q.units.map((u) => u.id)]);
 // [["acceleration", "m/s^2", ["m/s^2", "g", "mg", "cm/s^2"]], ["angular_velocity", "deg/s", ["deg/s", "rad/s", "rpm"]], ...]
 ```
+
+## 4.4.0: sound
+
+- Train on the sound of recordings: the presets `audio_cnn` and `mixed_cnn`, or `audio` in the training options.
+- `OnnxPredictor` runs models that take sound (manifest schema 2): `addAudio` / `addPcm16` with any sample rate, `predictInputs`, `isReady`, `windowMs`, `audioSampleRate`. Sensor models (schema 1) work as before.
+- `edgeML.Resampler`: streaming sample-rate conversion with anti-aliasing.
+- Earlier versions can't load models that take sound.
 
 ## 4.3.0: labels over time ranges
 

@@ -212,6 +212,13 @@ export interface TrainOptions {
     /** label names or ids to leave out */
     disabledLabels?: string[];
     useZeroClass?: boolean;
+    /** a training preset of the server, e.g. "small_cnn", "audio_cnn" or "mixed_cnn" */
+    preset?: string;
+    /**
+     * name of the recording whose sound the model learns from (audio pipeline);
+     * default for the audio presets: the recording every dataset has
+     */
+    audio?: string;
     /**
      * Per-step overrides. The default pipeline (Sample based windowing,
      * SimpleFeatureExtractor, MinMaxNormalizer, Random Forest Classifier,
@@ -243,6 +250,8 @@ export interface ModelInfo {
     /** the unit each input expects (quantity null and unit "" for models trained before units existed) */
     inputUnits?: InputUnit[];
     samplingRate: number | null;
+    /** sound the model takes: the recording it was trained on and the rate it expects; [] for sensor models */
+    audioInputs?: { name: string; sampleRate: number }[];
     metrics: Record<string, unknown> | null;
 }
 
@@ -301,9 +310,17 @@ export class OnnxPredictor {
     readonly sensors: string[];
     /** label of every model output */
     readonly labels: string[];
-    /** samples per window */
+    /** samples per window (of the sensor input; 0 for models that only take sound) */
     readonly windowSize: number;
     readonly manifest: any;
+    /** true for models with several inputs (manifest schema 2), e.g. sound */
+    readonly multiInput: boolean;
+    /** window duration in ms (schema 2) */
+    readonly windowMs?: number;
+    /** sample rate the model takes sound at, or null when it takes none */
+    readonly audioSampleRate: number | null;
+    /** true when enough data is buffered for predict() */
+    readonly isReady: boolean;
     /** unit each input expects, from the manifest */
     readonly inputUnits: InputUnit[];
 
@@ -329,6 +346,27 @@ export class OnnxPredictor {
     predict(): Promise<OnnxPrediction>;
     /** Classifies one window of `windowSize` rows in `sensors` order (in the declared units). */
     predictWindow(window: number[][]): Promise<OnnxPrediction>;
+    /**
+     * Adds sound (models with `audioSampleRate`): samples in [-1, 1] at any rate,
+     * interleaved when channels > 1. `time`: unix ms of the last sample (default now).
+     */
+    addAudio(samples: ArrayLike<number>, opts: { sampleRate: number; channels?: number; time?: number }): void;
+    /** Like addAudio, for 16-bit PCM. */
+    addPcm16(samples: Int16Array, opts: { sampleRate: number; channels?: number; time?: number }): void;
+    /** Classifies one window of a model that takes sound: sensor rows and/or mono samples at audioSampleRate. */
+    predictInputs(inputs: { sensors?: number[][]; audio?: ArrayLike<number> }): Promise<OnnxPrediction>;
+}
+
+/** Streaming sample-rate conversion (windowed sinc, anti-aliased when converting down). */
+export class Resampler {
+    constructor(inRate: number, outRate: number, opts?: { zeroCrossings?: number });
+    readonly inRate: number;
+    readonly outRate: number;
+    /** how far the output lags the input (ms) */
+    readonly latencyMs: number;
+    /** Converts the next chunk; returns the output samples it completes. */
+    process(input: ArrayLike<number>): Float32Array;
+    reset(): void;
 }
 
 /** Downloads a trained model (read key) and returns a ready OnnxPredictor. */
@@ -353,5 +391,6 @@ declare const edgeML: {
     loadModel: typeof loadModel;
     OnnxPredictor: typeof OnnxPredictor;
     PredictorError: typeof PredictorError;
+    Resampler: typeof Resampler;
 };
 export default edgeML;

@@ -45,9 +45,11 @@ export function initEntry(ts) {
  * @returns {import("../index").InputUnit[]}
  */
 export function manifestUnits(manifest) {
-  const names = manifest.input.timeseries;
+  // schema 2 manifests list their inputs; the sensor one carries the units
+  const input = manifest.input || (manifest.inputs || []).find((i) => i.kind === "sensors") || { timeseries: [] };
+  const names = input.timeseries;
   const byName = {};
-  for (const u of manifest.input.units || []) byName[u.name] = u;
+  for (const u of input.units || []) byName[u.name] = u;
   return names.map((name) => {
     const u = byName[name] || {};
     return { name, quantity: u.quantity || null, unit: u.unit || "", conversions: u.conversions || {} };

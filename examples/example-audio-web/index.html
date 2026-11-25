@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>edge-ml: classify sound live</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #1b2733; }
+    label { display: block; margin: .5rem 0; }
+    input[type=text], input:not([type]) { width: 100%; }
+    fieldset { border: 1px solid #d9dee3; border-radius: 8px; margin: 1rem 0; }
+    button { font-size: 1rem; padding: .4rem 1rem; }
+    #result { font-size: 2.2rem; font-weight: 700; margin: 1rem 0 .5rem; min-height: 2.6rem; }
+    .bar { display: grid; grid-template-columns: 7rem 1fr 3.5rem; align-items: center; gap: .5rem; margin: .3rem 0; }
+    .bar div { height: .9rem; background: #e9ecef; border-radius: 4px; overflow: hidden; }
+    .bar span { display: block; height: 100%; background: #1c7ed6; transition: width .2s; }
+    .bar.top span { background: #2f9e44; }
+    #info, #log { color: #5c6670; font-size: .9rem; }
+    #level { height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden; margin-top: .5rem; }
+    #level span { display: block; height: 100%; width: 0; background: #ae3ec9; }
+  </style>
+</head>
+<body>
+  <h1>Classify sound live</h1>
+  <p>
+    Runs an edge-ml model that was trained on sound (preset <code>audio_cnn</code> or
+    <code>mixed_cnn</code>) on this device's microphone, in the page, with onnxruntime-web.
+    Sound is resampled from the microphone's rate to the model's. Models that also take
+    sensors use the phone's motion sensor.
+  </p>
+
+  <fieldset>
+    <legend>Model from the edge-ml server</legend>
+    <label>edge-ml URL <input id="url" value="https://app.edge-ml.org"></label>
+    <label>Device API read key <input id="key"></label>
+    <label>Model id <input id="model"></label>
+  </fieldset>
+  <fieldset>
+    <legend>or from a download (ONNX): model.onnx and manifest.json</legend>
+    <input id="files" type="file" multiple accept=".onnx,.json">
+  </fieldset>
+
+  <button id="start">Start listening</button>
+  <button id="stop" disabled>Stop</button>
+
+  <div id="result"></div>
+  <div id="bars"></div>
+  <div id="level"><span></span></div>
+  <p id="info"></p>
+  <pre id="log"></pre>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const log = (msg) => ($("log").textContent = msg + "\n" + $("log").textContent);
+
+  // the library: from this repository when served from it, otherwise from unpkg
+  const lib = new Promise((resolve, reject) => {
+    const load = (src, next) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = () => resolve(window.edgeML);
+      s.onerror = next;
+      document.head.appendChild(s);
+    };
+    load("../../dist/index.browser.js", () => load("https://unpkg.com/edge-ml", reject));
+  });
+
+  // posts the microphone's samples to the page in chunks of 2048
+  const WORKLET = `
+    class Tap extends AudioWorkletProcessor {
+      constructor() { super(); this.buf = new Float32Array(2048); this.n = 0; }
+      process(inputs) {
+        const ch = inputs[0][0];
+        if (ch) for (let i = 0; i < ch.length; i++) {
+          this.buf[this.n++] = ch[i];
+          if (this.n === this.buf.length) { this.port.postMessage(this.buf.slice()); this.n = 0; }
+        }
+        return true;
+      }
+    }
+    registerProcessor("tap", Tap);`;
+
+  let stopAll = null;
+
+  async function loadPredictor(edgeML) {
+    const files = [...$("files").files];
+    if (files.length) {
+      const onnx = files.find((f) => f.name.endsWith(".onnx"));
+      const manifest = files.find((f) => f.name.endsWith(".json"));
+      if (!onnx || !manifest) throw new Error("Choose model.onnx and manifest.json");
+      return edgeML.OnnxPredictor.load(await onnx.arrayBuffer(), JSON.parse(await manifest.text()));
+    }
+    return edgeML.loadModel($("url").value, $("key").value, $("model").value);
+  }
+
+  function showResult(res) {
+    $("result").textContent = res.prediction;
+    $("bars").innerHTML = res.labels.map((label, i) => `
+      <div class="bar ${i === res.index ? "top" : ""}">
+        <b>${label}</b><div><span style="width:${(res.probabilities[i] * 100).toFixed(1)}%"></span></div>
+        <small>${(res.probabilities[i] * 100).toFixed(1)} %</small>
+      </div>`).join("");
+  }
+
+  $("start").onclick = async () => {
+    try {
+      $("start").disabled = true;
+      const edgeML = await lib;
+      const predictor = await loadPredictor(edgeML);
+      if (!predictor.audioSampleRate) throw new Error("This model does not take sound");
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        // the raw sound, as recorded for training
+        audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const ctx = new AudioContext();
+      await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
+      const tap = new AudioWorkletNode(ctx, "tap");
+      ctx.createMediaStreamSource(stream).connect(tap);
+      tap.port.onmessage = ({ data }) => {
+        predictor.addAudio(data, { sampleRate: ctx.sampleRate });
+        let peak = 0;
+        for (const x of data) peak = Math.max(peak, Math.abs(x));
+        $("level").firstElementChild.style.width = Math.min(100, peak * 300) + "%";
+      };
+
+      // mixed models: the motion sensor too (accelerometer in m/s², with gravity)
+      let stopMotion = () => {};
+      if (predictor.sensors.length) {
+        if (typeof DeviceMotionEvent !== "undefined" && DeviceMotionEvent.requestPermission) {
+          await DeviceMotionEvent.requestPermission();
+        }
+        const names = predictor.sensors;
+        const onMotion = (e) => {
+          const a = e.accelerationIncludingGravity;
+          if (a && a.x !== null) predictor.addSample([a.x, a.y, a.z].slice(0, names.length));
+        };
+        window.addEventListener("devicemotion", onMotion);
+        stopMotion = () => window.removeEventListener("devicemotion", onMotion);
+      }
+
+      $("info").textContent =
+        `Microphone at ${ctx.sampleRate} Hz → model at ${predictor.audioSampleRate} Hz, ` +
+        `windows of ${predictor.windowMs} ms` +
+        (predictor.sensors.length ? `, sensors ${predictor.sensors.join(", ")}` : "") + ".";
+      const every = predictor.manifest.window.stride_ms;
+      const timer = setInterval(async () => {
+        if (!predictor.isReady) return;
+        try {
+          showResult(await predictor.predict());
+        } catch (e) {
+          log(e.message);
+        }
+      }, every);
+
+      stopAll = () => {
+        clearInterval(timer);
+        stopMotion();
+        stream.getTracks().forEach((t) => t.stop());
+        ctx.close();
+      };
+      $("stop").disabled = false;
+    } catch (e) {
+      log(e.message);
+      $("start").disabled = false;
+    }
+  };
+
+  $("stop").onclick = () => {
+    if (stopAll) stopAll();
+    stopAll = null;
+    $("stop").disabled = true;
+    $("start").disabled = false;
+  };
+</script>
+</body>
+</html>

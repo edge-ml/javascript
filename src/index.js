@@ -1,6 +1,7 @@
 import { http } from "./http";
 import { PredictorError } from "./errors";
 import { OnnxPredictor, loadModel } from "./onnx/OnnxPredictor";
+import { Resampler } from "./onnx/resample";
 import { UnitError, fetchUnits, initEntry, seriesSpec } from "./units";
 import { uploadMedia, downloadMedia, listDatasets } from "./media";
 import { listPipelines, startTraining, trainModel, waitForModel, getModel, listModels } from "./training";
@@ -274,6 +275,7 @@ const edgeML = {
   loadModel: loadModel,
   OnnxPredictor: OnnxPredictor,
   PredictorError: PredictorError,
+  Resampler: Resampler,
 };
 
 export default edgeML;
@@ -295,4 +297,5 @@ export {
   loadModel,
   OnnxPredictor,
   PredictorError,
+  Resampler,
 };
