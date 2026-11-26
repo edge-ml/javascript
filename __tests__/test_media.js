@@ -127,6 +127,44 @@ describe("sendDataset with media", () => {
         expect(calls).toHaveLength(2); // nothing to append
     });
 
+    it("labels a dataset that only holds recordings, once they are there", async () => {
+        const calls = mockFetch({
+            "POST /api/v1/deviceapi/dataset/init/WRITE": () => ({ id: "d1" }),
+            "POST /api/v1/deviceapi/dataset/append/WRITE/d1": () => undefined,
+            "POST /api/v1/deviceapi/dataset/media/WRITE/d1": () => MEDIA,
+        });
+        await edgeML.sendDataset(URL, "WRITE", {
+            name: "interview",
+            media: [{ file: Buffer.from("a") }],
+            labeling: "speaker_anna",
+            labels: [{ labeling: "topic", label: "intro", start: 1000.2, end: 2000 }],
+        });
+        expect(calls.map((c) => c.url.split("/deviceapi/")[1])).toEqual([
+            "dataset/init/WRITE", "dataset/media/WRITE/d1", "dataset/append/WRITE/d1",
+        ]);
+        expect(calls[2].body).toEqual({
+            data: [],
+            labeling: { labelingName: "speaker", labelName: "anna" },
+            labels: [{ labelingName: "topic", labelName: "intro", start: 1000, end: 2000 }],
+        });
+    });
+
+    it("sends the labels after the recordings, so a whole-dataset label covers them", async () => {
+        const calls = mockFetch({
+            "POST /api/v1/deviceapi/dataset/init/WRITE": () => ({ id: "d1" }),
+            "POST /api/v1/deviceapi/dataset/append/WRITE/d1": () => undefined,
+            "POST /api/v1/deviceapi/dataset/media/WRITE/d1": () => MEDIA,
+        });
+        await edgeML.sendDataset(URL, "WRITE", {
+            name: "walk",
+            timeSeries: [{ name: "accX", data: [[1000, 1]] }],
+            media: [{ file: Buffer.from("a") }],
+            labeling: "activity_walk",
+        });
+        expect(calls[1].body).toEqual({ data: [{ name: "accX", data: [[1000, 1]] }] });
+        expect(calls[3].body).toEqual({ data: [], labeling: { labelingName: "activity", labelName: "walk" } });
+    });
+
     it("still needs time-series or media", async () => {
         mockFetch({});
         await expect(edgeML.sendDataset(URL, "WRITE", { name: "empty" })).rejects.toThrow("needs a name and a timeSeries array");
@@ -157,5 +195,42 @@ describe("listDatasets and downloadMedia", () => {
         const data = await edgeML.downloadMedia(URL, "READ", "d1", "m1");
         expect(data).toBeInstanceOf(ArrayBuffer);
         expect(Buffer.from(data).toString()).toBe("sound");
+    });
+});
+
+describe("labels over time ranges", () => {
+    const LABEL = { labeling: "activity", label: "walk", start: 1000, end: 2000 };
+
+    it("sends them with the data of a dataset without recordings", async () => {
+        const calls = mockFetch({
+            "POST /api/v1/deviceapi/dataset/init/WRITE": () => ({ id: "d1" }),
+            "POST /api/v1/deviceapi/dataset/append/WRITE/d1": () => undefined,
+        });
+        await edgeML.sendDataset(URL, "WRITE", {
+            name: "walk", timeSeries: [{ name: "accX", data: [[1000, 1]] }], labels: [LABEL],
+        });
+        expect(calls).toHaveLength(2);
+        expect(calls[1].body.labels).toEqual([{ labelingName: "activity", labelName: "walk", start: 1000, end: 2000 }]);
+    });
+
+    it("adds them to an existing dataset", async () => {
+        const calls = mockFetch({ "POST /api/v1/deviceapi/dataset/append/WRITE/d1": () => undefined });
+        await edgeML.addLabels(URL, "WRITE", "d1", [LABEL]);
+        expect(calls[0].body).toEqual({
+            data: [], labels: [{ labelingName: "activity", labelName: "walk", start: 1000, end: 2000 }],
+        });
+        await edgeML.addLabels(URL, "WRITE", "d1", []);
+        expect(calls).toHaveLength(1); // nothing to send
+    });
+
+    it("rejects bad labels before sending anything", async () => {
+        const calls = mockFetch({});
+        await expect(edgeML.addLabels(URL, "WRITE", "", [LABEL])).rejects.toThrow("needs the id of a dataset");
+        await expect(edgeML.addLabels(URL, "WRITE", "d1")).rejects.toThrow("labels must be an array");
+        await expect(edgeML.addLabels(URL, "WRITE", "d1", [{ ...LABEL, label: "" }])).rejects.toThrow("needs a labeling and a label");
+        await expect(edgeML.addLabels(URL, "WRITE", "d1", [{ ...LABEL, end: undefined }])).rejects.toThrow("needs start and end");
+        await expect(edgeML.addLabels(URL, "WRITE", "d1", [{ ...LABEL, end: 500 }])).rejects.toThrow("ends before it starts");
+        await expect(edgeML.sendDataset(URL, "WRITE", { name: "x", timeSeries: [], labels: "walk" })).rejects.toThrow("labels must be an array");
+        expect(calls).toHaveLength(0);
     });
 });

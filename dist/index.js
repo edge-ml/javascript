@@ -103,7 +103,7 @@ class PredictorError extends Error {}
  };
 
 // keep up to STORE_FACTOR * windowSize datapoints per sensor
-const STORE_FACTOR = 4;
+const STORE_FACTOR$2 = 4;
 
 /**
  * Buffers sensor values and produces the last sample-based window, aligned the
@@ -140,8 +140,8 @@ class SampleBuffer {
     }
     const series = this.store[sensor];
     series.push([time, value]);
-    if (series.length > 2 * STORE_FACTOR * this.windowSize) {
-      this.store[sensor] = series.slice(-STORE_FACTOR * this.windowSize);
+    if (series.length > 2 * STORE_FACTOR$2 * this.windowSize) {
+      this.store[sensor] = series.slice(-STORE_FACTOR$2 * this.windowSize);
     }
   }
 
@@ -193,6 +193,283 @@ class SampleBuffer {
       merged.forEach((row, i) => (row[col] = column[i]));
     }
     return merged.slice(-this.windowSize);
+  }
+}
+
+// keep this many windows of sensor data
+const STORE_FACTOR$1 = 4;
+
+/**
+ * Buffers sensor values for models with windows of a fixed duration (schema 2
+ * manifests): every sensor keeps its own timestamps, and a window is the
+ * sensors linearly interpolated onto an even grid, the way training builds it.
+ */
+class TimeGridBuffer {
+  /**
+   * @param {string[]} sensors - in model input order
+   * @param {number} samples - grid points per window
+   * @param {number} windowMs - window duration
+   */
+  constructor(sensors, samples, windowMs) {
+    this.sensors = sensors;
+    this.samples = samples;
+    this.windowMs = windowMs;
+    this.reset();
+  }
+
+  reset() {
+    /** @type {{ [sensor: string]: { t: number[], v: number[] } }} */
+    this.store = {};
+    for (const s of this.sensors) this.store[s] = { t: [], v: [] };
+  }
+
+  /**
+   * @param {string} sensor
+   * @param {number} value
+   * @param {number} [time] - unix ms, defaults to now
+   */
+  addDatapoint(sensor, value, time = Date.now()) {
+    if (typeof value !== "number" || Number.isNaN(value)) throw new TypeError("Datapoint is not a number");
+    const series = this.store[sensor];
+    if (!series) throw new TypeError(`Unknown sensor '${sensor}'. The model expects: ${this.sensors.join(", ")}`);
+    if (series.t.length && time < series.t[series.t.length - 1]) {
+      // out of order: insert where it belongs
+      const at = series.t.findIndex((t) => t > time);
+      series.t.splice(at, 0, time);
+      series.v.splice(at, 0, value);
+    } else {
+      series.t.push(time);
+      series.v.push(value);
+    }
+    const keepFrom = time - STORE_FACTOR$1 * this.windowMs;
+    let drop = 0;
+    while (drop < series.t.length - 2 && series.t[drop + 1] < keepFrom) drop++;
+    if (drop) {
+      series.t.splice(0, drop);
+      series.v.splice(0, drop);
+    }
+  }
+
+  /** @param {number[] | { [sensor: string]: number }} values @param {number} [time] */
+  addSample(values, time = Date.now()) {
+    if (Array.isArray(values)) {
+      if (values.length !== this.sensors.length) {
+        throw new TypeError(`Expected ${this.sensors.length} values (${this.sensors.join(", ")}), got ${values.length}`);
+      }
+      this.sensors.forEach((s, i) => this.addDatapoint(s, values[i], time));
+    } else {
+      for (const [s, v] of Object.entries(values)) this.addDatapoint(s, v, time);
+    }
+  }
+
+  /** unix ms up to which every sensor has data, or null */
+  get endTime() {
+    let end = Infinity;
+    for (const s of this.sensors) {
+      const { t } = this.store[s];
+      if (!t.length) return null;
+      end = Math.min(end, t[t.length - 1]);
+    }
+    return this.sensors.length ? end : null;
+  }
+
+  /**
+   * The window ending at `endTime`: `samples` rows of sensor values.
+   * @param {number} [endTime]
+   * @returns {number[][]}
+   */
+  window(endTime = this.endTime) {
+    if (endTime === null) throw new PredictorError("No sensor data yet");
+    const start = endTime - this.windowMs;
+    const step = this.windowMs / this.samples;
+    const rows = Array.from({ length: this.samples }, () => new Array(this.sensors.length));
+    this.sensors.forEach((s, c) => {
+      const { t, v } = this.store[s];
+      // training only uses windows inside a sensor's data (1 ms tolerance)
+      if (!t.length || t[0] > start + 1) {
+        throw new PredictorError(`Not enough data for sensor '${s}' (need ${this.windowMs} ms)`);
+      }
+      let j = 0;
+      for (let k = 0; k < this.samples; k++) {
+        const x = start + k * step;
+        while (j < t.length - 2 && t[j + 1] <= x) j++;
+        if (x <= t[0]) rows[k][c] = v[0];
+        else if (x >= t[t.length - 1]) rows[k][c] = v[v.length - 1];
+        else {
+          const a = t[j + 1] === t[j] ? 0 : (x - t[j]) / (t[j + 1] - t[j]);
+          rows[k][c] = v[j] * (1 - a) + v[j + 1] * a;
+        }
+      }
+    });
+    return rows;
+  }
+}
+
+// Streaming sample-rate conversion for microphone audio.
+//
+// Windowed-sinc interpolation (Blackman window). When converting down (e.g.
+// 48 kHz to 16 kHz) the kernel is widened and its cutoff lowered below the
+// new Nyquist frequency, so sounds above it are filtered out instead of
+// folding back as aliases. Chunks can be of any size; the output does not
+// depend on how the input was split.
+
+const sinc = (x) => (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x));
+
+// share of the output Nyquist band that is kept when converting down
+const PASSBAND = 0.92;
+
+class Resampler {
+  /**
+   * @param {number} inRate - sample rate of the input (Hz)
+   * @param {number} outRate - sample rate of the output (Hz)
+   * @param {{ zeroCrossings?: number }} [opts] - kernel length; more is sharper and slower
+   */
+  constructor(inRate, outRate, { zeroCrossings = 16 } = {}) {
+    if (!(inRate > 0) || !(outRate > 0)) throw new RangeError("Sample rates must be positive");
+    this.inRate = inRate;
+    this.outRate = outRate;
+    /** input samples per output sample */
+    this.step = inRate / outRate;
+    /** cutoff as a fraction of the input Nyquist frequency */
+    this.cutoff = outRate < inRate ? (outRate / inRate) * PASSBAND : 1;
+    /** kernel half-width in input samples */
+    this.half = Math.ceil(zeroCrossings / this.cutoff);
+    this.reset();
+  }
+
+  /** Forgets the past input (e.g. after a gap in the recording). */
+  reset() {
+    this.history = new Float32Array(0);
+    // position of the next output sample, in input samples from history[0]
+    this.pos = 0;
+  }
+
+  /**
+   * How far the output lags the input, in ms: an output sample needs the
+   * input up to half a kernel after it.
+   */
+  get latencyMs() {
+    return this.inRate === this.outRate ? 0 : (this.half / this.inRate) * 1000;
+  }
+
+  /**
+   * @param {ArrayLike<number>} input - the next input samples
+   * @returns {Float32Array} the output samples they complete
+   */
+  process(input) {
+    if (this.inRate === this.outRate) return Float32Array.from(input);
+    const x = new Float32Array(this.history.length + input.length);
+    x.set(this.history);
+    x.set(input, this.history.length);
+
+    const out = [];
+    const { half, cutoff } = this;
+    while (this.pos + half < x.length) {
+      const center = this.pos;
+      const first = Math.ceil(center - half);
+      const last = Math.floor(center + half);
+      let acc = 0;
+      for (let i = Math.max(0, first); i <= last; i++) {
+        const t = i - center;
+        const w = 0.42 + 0.5 * Math.cos((Math.PI * t) / half) + 0.08 * Math.cos((2 * Math.PI * t) / half);
+        acc += x[i] * cutoff * sinc(cutoff * t) * w;
+      }
+      out.push(acc);
+      this.pos += this.step;
+    }
+    // keep what the next output samples still need
+    const keep = Math.max(0, Math.floor(this.pos - half) - 1);
+    this.history = x.slice(keep);
+    this.pos -= keep;
+    return Float32Array.from(out);
+  }
+}
+
+/**
+ * Mixes interleaved multi-channel samples down to mono.
+ * @param {ArrayLike<number>} samples
+ * @param {number} channels
+ * @returns {Float32Array}
+ */
+function downmix(samples, channels) {
+  if (channels === 1) return Float32Array.from(samples);
+  const frames = Math.floor(samples.length / channels);
+  const out = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    for (let c = 0; c < channels; c++) sum += samples[f * channels + c];
+    out[f] = sum / channels;
+  }
+  return out;
+}
+
+// keep this many windows of audio
+const STORE_FACTOR = 4;
+
+/**
+ * Buffers microphone audio for a model: converts it to mono at the model's
+ * sample rate and keeps the latest samples with the time of the last one.
+ */
+class AudioBuffer {
+  /**
+   * @param {number} sampleRate - the rate the model expects
+   * @param {number} windowSamples - samples per window
+   */
+  constructor(sampleRate, windowSamples) {
+    this.sampleRate = sampleRate;
+    this.windowSamples = windowSamples;
+    this.capacity = STORE_FACTOR * windowSamples;
+    this.reset();
+  }
+
+  reset() {
+    this.data = new Float32Array(this.capacity);
+    this.count = 0; // samples stored, up to capacity
+    this.head = 0; // next write position
+    /** unix ms of the last stored sample, or null before any audio */
+    this.endTime = null;
+    this.resampler = null;
+  }
+
+  /**
+   * @param {ArrayLike<number>} samples - in [-1, 1]; interleaved when channels > 1
+   * @param {{ sampleRate: number, channels?: number, time?: number }} opts -
+   *   time: unix ms of the last sample in `samples` (default: now)
+   */
+  add(samples, { sampleRate, channels = 1, time = Date.now() } = {}) {
+    if (!(sampleRate > 0)) throw new TypeError("addAudio needs the sampleRate of the samples");
+    if (!this.resampler || this.resampler.inRate !== sampleRate) {
+      this.resampler = new Resampler(sampleRate, this.sampleRate);
+    }
+    const mono = downmix(samples, channels);
+    const out = this.resampler.process(mono);
+    for (let i = 0; i < out.length; i++) {
+      this.data[this.head] = out[i];
+      this.head = (this.head + 1) % this.capacity;
+    }
+    this.count = Math.min(this.capacity, this.count + out.length);
+    this.endTime = time - this.resampler.latencyMs;
+  }
+
+  /**
+   * The `windowSamples` samples ending at `endTime` (unix ms, at most the time
+   * of the last sample).
+   * @param {number} [endTime]
+   * @returns {Float32Array}
+   */
+  window(endTime = this.endTime) {
+    if (this.endTime === null) throw new PredictorError("No audio yet");
+    const back = Math.max(0, Math.round(((this.endTime - endTime) * this.sampleRate) / 1000));
+    const needed = this.windowSamples + back;
+    if (this.count < needed) {
+      throw new PredictorError(`Not enough audio (${Math.max(0, this.count - back)}/${this.windowSamples} samples)`);
+    }
+    const out = new Float32Array(this.windowSamples);
+    const start = this.head - needed;
+    for (let i = 0; i < this.windowSamples; i++) {
+      out[i] = this.data[(((start + i) % this.capacity) + this.capacity) % this.capacity];
+    }
+    return out;
   }
 }
 
@@ -360,9 +637,11 @@ function initEntry(ts) {
  * @returns {import("../index").InputUnit[]}
  */
 function manifestUnits(manifest) {
-  const names = manifest.input.timeseries;
+  // schema 2 manifests list their inputs; the sensor one carries the units
+  const input = manifest.input || (manifest.inputs || []).find((i) => i.kind === "sensors") || { timeseries: [] };
+  const names = input.timeseries;
   const byName = {};
-  for (const u of manifest.input.units || []) byName[u.name] = u;
+  for (const u of input.units || []) byName[u.name] = u;
   return names.map((name) => {
     const u = byName[name] || {};
     return { name, quantity: u.quantity || null, unit: u.unit || "", conversions: u.conversions || {} };
@@ -436,6 +715,11 @@ const toBytes = (data) => (data instanceof Uint8Array ? data : new Uint8Array(da
  * Runs an edge-ml model exported as ONNX (browser: onnxruntime-web,
  * Node.js: onnxruntime-node). Feature extraction and normalization are part of
  * the model; the predictor only buffers raw sensor values into windows.
+ *
+ * Models that take sound (manifest schema 2) are fed with `addAudio` too:
+ * samples at any rate, which are converted to the model's rate. Their windows
+ * have a fixed duration (`windowMs`), and sensors are interpolated onto the
+ * model's rate the way training did.
  */
 class OnnxPredictor {
   /**
@@ -451,12 +735,33 @@ class OnnxPredictor {
     this.manifest = manifest;
     this.ort = ort;
     /** @type {string[]} */
-    this.sensors = manifest.input.timeseries;
-    /** @type {string[]} */
     this.labels = manifest.output.labels;
-    /** @type {number} */
-    this.windowSize = manifest.window.size;
-    this.buffer = new SampleBuffer(this.sensors, this.windowSize);
+    /** manifest schema 2: several inputs (sound and/or sensors), windows by duration */
+    this.multiInput = manifest.schema_version >= 2;
+    if (this.multiInput) {
+      const sensors = (manifest.inputs || []).find((i) => i.kind === "sensors");
+      const audio = (manifest.inputs || []).find((i) => i.kind === "audio");
+      this._sensorInput = sensors || null;
+      this._audioInput = audio || null;
+      /** @type {string[]} */
+      this.sensors = sensors ? sensors.timeseries : [];
+      /** samples per window of the sensor input (0 without sensors) */
+      this.windowSize = sensors ? sensors.shape[1] : 0;
+      /** window duration in ms (schema 2) */
+      this.windowMs = manifest.window.duration_ms;
+      /** sample rate the model expects for sound, or null without a sound input */
+      this.audioSampleRate = audio ? audio.sample_rate : null;
+      this.buffer = new TimeGridBuffer(this.sensors, this.windowSize, this.windowMs);
+      this.audioBuffer = audio ? new AudioBuffer(audio.sample_rate, audio.shape[1]) : null;
+    } else {
+      /** @type {string[]} */
+      this.sensors = manifest.input.timeseries;
+      /** @type {number} */
+      this.windowSize = manifest.window.size;
+      this.buffer = new SampleBuffer(this.sensors, this.windowSize);
+      this.audioBuffer = null;
+      this.audioSampleRate = null;
+    }
     /**
      * Unit the model expects for each input, with conversions from other units.
      * Inputs of models trained before units existed have quantity null and unit "".
@@ -557,9 +862,44 @@ class OnnxPredictor {
     this.buffer.addSample(values, time);
   }
 
-  /** Clears all buffered datapoints. */
+  /**
+   * Adds sound for models with a sound input (`predictor.audioSampleRate`).
+   * Samples can have any rate; they are mixed to mono and resampled.
+   * @param {ArrayLike<number>} samples - in [-1, 1] (e.g. a Float32Array from the Web Audio API); interleaved if channels > 1
+   * @param {{ sampleRate: number, channels?: number, time?: number }} opts - time: unix ms of the last sample (default: now)
+   */
+  addAudio(samples, opts) {
+    if (!this.audioBuffer) throw new TypeError("This model does not take sound");
+    this.audioBuffer.add(samples, opts);
+  }
+
+  /**
+   * Like `addAudio` for 16-bit PCM (e.g. from a recorder that delivers bytes).
+   * @param {Int16Array} samples
+   * @param {{ sampleRate: number, channels?: number, time?: number }} opts
+   */
+  addPcm16(samples, opts) {
+    const floats = new Float32Array(samples.length);
+    for (let i = 0; i < samples.length; i++) floats[i] = samples[i] / 32768;
+    this.addAudio(floats, opts);
+  }
+
+  /** Clears all buffered datapoints (and sound). */
   reset() {
     this.buffer.reset();
+    if (this.audioBuffer) this.audioBuffer.reset();
+  }
+
+  /** True when enough data is buffered for `predict()`. */
+  get isReady() {
+    try {
+      if (this.multiInput) this._latestInputs();
+      else this.buffer.window();
+      return true;
+    } catch (e) {
+      if (e instanceof PredictorError) return false;
+      throw e;
+    }
   }
 
   /**
@@ -568,7 +908,74 @@ class OnnxPredictor {
    * @returns {Promise<import("../../index").OnnxPrediction>}
    */
   async predict() {
+    if (this.multiInput) return this.predictInputs(this._latestInputs());
     return this.predictWindow(this.buffer.window());
+  }
+
+  /** The latest window of every input, ending at the same time. */
+  _latestInputs() {
+    const ends = [];
+    if (this.sensors.length) ends.push(this.buffer.endTime);
+    if (this.audioBuffer) ends.push(this.audioBuffer.endTime);
+    if (ends.some((t) => t === null)) {
+      throw new PredictorError(this.audioBuffer && this.audioBuffer.endTime === null ? "No audio yet" : "No sensor data yet");
+    }
+    const end = Math.min(...ends);
+    const inputs = {};
+    if (this.sensors.length) inputs.sensors = this.buffer.window(end);
+    if (this.audioBuffer) inputs.audio = this.audioBuffer.window(end);
+    return inputs;
+  }
+
+  /**
+   * Classifies one window of a model with a sound input (schema 2).
+   * @param {{ sensors?: number[][], audio?: ArrayLike<number> }} inputs -
+   *   sensors: `windowSize` rows in `sensors` order (declared units);
+   *   audio: one window of mono samples at `audioSampleRate`, in [-1, 1]
+   * @returns {Promise<import("../../index").OnnxPrediction>}
+   */
+  async predictInputs({ sensors, audio } = {}) {
+    if (!this.multiInput) throw new TypeError("This model takes one sensor window; use predictWindow");
+    const feeds = {};
+    if (this._sensorInput) {
+      feeds[this._sensorInput.name] = this._sensorTensor(sensors, this._sensorInput.name);
+    }
+    if (this._audioInput) {
+      const n = this._audioInput.shape[1];
+      if (!audio || audio.length !== n) throw new TypeError(`Audio window must have ${n} samples`);
+      feeds[this._audioInput.name] = new this.ort.Tensor("float32", Float32Array.from(audio), [1, n]);
+    }
+    return this._run(feeds);
+  }
+
+  _sensorTensor(window, name) {
+    const n = this.sensors.length;
+    if (!window || window.length !== this.windowSize || window.some((row) => row.length !== n)) {
+      throw new TypeError(`Window must have shape [${this.windowSize}][${n}]`);
+    }
+    const data = new Float32Array(this.windowSize * n);
+    window.forEach((row, r) =>
+      row.forEach((value, c) => {
+        const conv = this._conversions[c];
+        data[r * n + c] = conv ? value * conv.scale + conv.offset : value;
+      })
+    );
+    return new this.ort.Tensor("float32", data, [1, this.windowSize, n]);
+  }
+
+  async _run(feeds) {
+    const outputs = await this.session.run(feeds);
+    const scores = Array.from(outputs[this.manifest.output.name].data);
+
+    const probabilities = this.manifest.output.type === "logits" ? softmax(scores) : scores;
+    const index = probabilities.reduce((best, p, i) => (p > probabilities[best] ? i : best), 0);
+    return {
+      prediction: this.labels[index],
+      index,
+      probabilities,
+      labels: this.labels,
+      scores,
+    };
   }
 
   /**
@@ -577,6 +984,10 @@ class OnnxPredictor {
    * @returns {Promise<import("../../index").OnnxPrediction>}
    */
   async predictWindow(window) {
+    if (this.multiInput) {
+      if (this._audioInput) throw new TypeError("This model also takes sound; use predictInputs({ sensors, audio })");
+      return this.predictInputs({ sensors: window });
+    }
     const n = this.sensors.length;
     if (window.length !== this.windowSize || window.some((row) => row.length !== n)) {
       throw new TypeError(`Window must have shape [${this.windowSize}][${n}]`);
@@ -727,8 +1138,9 @@ const URLS = {
  * @param {import("../index").DatasetUpload} dataset
  *   time-series data as [unix ms, value] pairs, each with an optional unit and quantity
  *   (e.g. { name: "accX", unit: "g", quantity: "acceleration", data }); labeling as
- *   "{labeling}_{label}" for the whole dataset; `media` with audio/video recordings
- *   (e.g. { file, start }), in which case timeSeries may be empty
+ *   "{labeling}_{label}" for the whole dataset; `labels` over time ranges
+ *   (e.g. { labeling: "activity", label: "walk", start, end }); `media` with audio/video
+ *   recordings (e.g. { file, start }), in which case timeSeries may be empty
  * @returns {Promise<string>} The id of the created dataset
  */
 async function sendDataset(url, key, dataset) {
@@ -741,6 +1153,7 @@ async function sendDataset(url, key, dataset) {
   if (!dataset || !dataset.name || !Array.isArray(series)) {
     throw new Error("dataset needs a name and a timeSeries array");
   }
+  const labels = labelEntries(dataset.labels);
   const init = await http.post(url, URLS.initDatasetIncrement + key, {
     name: dataset.name,
     metaData: dataset.metaData || {},
@@ -754,18 +1167,68 @@ async function sendDataset(url, key, dataset) {
     const [labelingName, labelName] = dataset.labeling.split("_");
     labeling = { labelingName, labelName };
   }
-  // a label for the whole dataset spans its time-series, so there is nothing
-  // to send for a dataset without any
+  // A label for the whole dataset spans what the dataset holds when it is
+  // sent, so with recordings the labels go last, once those are there.
+  const labelsLast = media.length > 0;
   if (series.length > 0) {
     await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
       data: series.map((ts) => ({ name: ts.name, data: ts.data })),
-      labeling: labeling,
+      labeling: labelsLast ? undefined : labeling,
+      // left out when there are none, as before
+      labels: labelsLast || labels.length === 0 ? undefined : labels,
     });
   }
   for (const { file, ...options } of media) {
     await uploadMedia(url, key, init.id, file, options);
   }
+  if (labelsLast && (labeling || labels.length > 0)) {
+    await http.post(url, URLS.addDatasetIncrement + key + "/" + init.id, {
+      data: [],
+      labeling,
+      labels: labels.length > 0 ? labels : undefined,
+    });
+  }
   return init.id;
+}
+
+/** Checks labels over time ranges and turns them into what the server takes. */
+function labelEntries(labels) {
+  if (labels === undefined) return [];
+  if (!Array.isArray(labels)) {
+    throw new Error("labels must be an array of { labeling, label, start, end }");
+  }
+  return labels.map((entry) => {
+    const { labeling, label, start, end } = entry || {};
+    if (typeof labeling !== "string" || !labeling || typeof label !== "string" || !label) {
+      throw new Error("a label needs a labeling and a label, e.g. { labeling: 'activity', label: 'walk', start, end }");
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      throw new Error(`label '${label}' needs start and end as unix timestamps in milliseconds`);
+    }
+    if (end < start) {
+      throw new Error(`label '${label}' ends before it starts`);
+    }
+    return { labelingName: labeling, labelName: label, start: Math.round(start), end: Math.round(end) };
+  });
+}
+
+/**
+ * Adds labels over time ranges to a dataset, e.g. to one that holds recordings.
+ * Labelings and labels that do not exist yet are created.
+ * @param {string} url - The url of the backend server
+ * @param {string} key - The Device-Api-Key (write access)
+ * @param {string} datasetId - id of the dataset, e.g. from sendDataset
+ * @param {import("../index").DatasetLabel[]} labels - e.g.
+ *   [{ labeling: "activity", label: "walk", start: 1618760114000, end: 1618760124000 }]
+ * @returns {Promise<void>}
+ */
+async function addLabels(url, key, datasetId, labels) {
+  if (!datasetId) {
+    throw new Error("addLabels needs the id of a dataset");
+  }
+  const entries = labelEntries(labels === undefined ? null : labels);
+  if (entries.length === 0) return;
+  await http.post(url, URLS.addDatasetIncrement + key + "/" + datasetId, { data: [], labels: entries });
 }
 
 /**
@@ -911,6 +1374,7 @@ const edgeML = {
   // data collection
   datasetCollector: datasetCollector,
   sendDataset: sendDataset,
+  addLabels: addLabels,
   listDatasets: listDatasets,
   // audio and video
   uploadMedia: uploadMedia,
@@ -929,6 +1393,7 @@ const edgeML = {
   loadModel: loadModel,
   OnnxPredictor: OnnxPredictor,
   PredictorError: PredictorError,
+  Resampler: Resampler,
 };
 
 // Entry of the CommonJS and <script> (IIFE) builds: they expose a single
