@@ -3,7 +3,7 @@
 Run in the ml image from the ml/ directory:
     python make_audio_fixtures.py OUT_DIR
 Writes OUT_DIR/{audio_mixed,audio_only}/{model.onnx,manifest.json,reference.json}
-(and model.pte for the Flutter library)."""
+(and model.pte with manifest_executorch.json for the Flutter library)."""
 import base64, json, os, sys
 sys.path.insert(0, "tests"); sys.path.insert(0, "tests/fixtures")
 import test_audio_export as t  # sets the test environment
@@ -60,6 +60,9 @@ for name, sensors in (("audio_mixed", True), ("audio_only", False)):
     open(os.path.join(OUT, name, "manifest.json"), "w").write(files["manifest.json"])
     manifest = json.loads(files["manifest.json"])
     open(os.path.join(OUT, name, "model.pte"), "wb").write(torch_export.build_pte(options))
+    # the Flutter library runs the .pte with the ExecuTorch manifest
+    open(os.path.join(OUT, name, "manifest_executorch.json"), "w").write(
+        json.dumps(torch_export.executorch_manifest(options, model), indent=2))
     sess = ort.InferenceSession(files["model.onnx"])
     audio = w.audio_for(rows)
     feeds = {"audio": audio}
