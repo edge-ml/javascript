@@ -14,6 +14,11 @@ const floats = (b64) => {
 
 const T0 = 1800000000000;
 
+// Resampling seconds of 48 kHz sound takes a few seconds under coverage
+// instrumentation (npm test, and the publish job); without it, 5 s of sound
+// take about 0.15 s.
+jest.setTimeout(30000);
+
 describe.each(["audio_mixed", "audio_only"])("OnnxPredictor with sound (%s)", (name) => {
     let predictor;
     let ref;
